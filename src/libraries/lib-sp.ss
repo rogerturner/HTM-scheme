@@ -17,45 +17,16 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  ;; Scheme top-level program with some tests and hello_sp and sp_tutorial examples.
+  ;; Run in DrRacket or load in Chez Scheme repl then (hello-sp) or (sp-tutorial)
+
   ;; Translated from NuPIC spatial_pooler.py, see comments there for more info.
   ;; Plain Scheme using non-sparse vectors but packing values into Fixnums.
   ;; Max 2 dimensions, no wraparound, no parameter consistency checking.
+
+  ;; See "(define (list-average..." for example of type definition comment and test.
   ;; Use a "Fold All" view (in eg Atom) for a source overview.
   
-(library (libraries lib-sp)
-
-  (export
-    list-average
-    add1
-    build-list
-    take
-    make-list
-    list->bitwise
-    int<-
-    id
-    build-vector 
-    id
-    vector-filter
-    vector-map-indexed
-    vector-fold-left
-    vector-average
-    fxvector-max
-    x10k
-    fx10k<-
-    fx10k*
-    vector-take
-    vector-count
-    vector-indices
-    vector-refs
-    vector->bitwise
-    bitwise-span
-    random 
-    vector-sample
-    key-word-args
-    perm<- 
-    make-sp*
-    compute)
-    
   (import (rnrs))  ;; use (except (chezscheme) add1 make-list random) for Chez load-program
   
   ;; "The last thing one discovers in composing a work is what to put first" (Pascal)
@@ -86,18 +57,25 @@
   (lambda (x)                            
     (syntax-case x ()                                  ;; [expect ([fn args] expected ) ... ]
       [ (_ (expr expected) ...)                        ;; expr matches [fn args]
-        #'(define (expect) #f)                         ;; disable tests in library
-  #;    #'(begin (let ((result expr))                  ;; eval expr just once
+        #'(begin (let ((result expr))                  ;; eval expr just once
                    (unless (equal? result expected)    ;; no output if check passes
                            (for-each display `("**" expr #\newline 
                              "  expected: " expected #\newline 
                              "  returned: " ,result  #\newline)))) ...)])))
                                                                                             ;
 (define (list-average l)                 ;; (listof Number) -> Number
-  ;; produce mean of non-empty list
-  (/ (apply + l) (length l)))
-
-  [expect ( [list-average (list 1 2 27)]  10 )]
+  ;; produce mean of non-empty list <-      -------------------------
+  (/ (apply + l) (length l)))        ;            ^
+                                     ;            |
+      ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; | ;;;;;;;;;; | ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+      ;; documentation for function: Description, Type, and Test (*)                ;;
+      ;;                                                    |                       ;;
+  [expect ( [list-average (list 1 2 27)]  10 )] ;; <---------                       ;;
+      ;;    ----------------------------  --                                        ;;
+      ;;    ^ exercise function           ^ expected result                         ;;
+      ;; (*)  description and test are optional                                     ;;
+      ;;      locate uses of fn by finding "(fn ", tests use "[fn ...] ")           ;;
+      ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;                                                                                 
                                                                                             ;
 (define (add1 n)                         ;; Fixnum -> Fixnum
   (fx+ 1 n))
@@ -271,11 +249,11 @@
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
 
-  [define SOURCE [build-vector 100 id]]
-  [define SELECT [vector->list [vector-sample SOURCE 50] ]]
-  [expect ( (length SELECT) 50 )
-          ( (list? (for-all memq SELECT [make-list 50 [vector->list SOURCE]])) #t )  ;; all from source
-          ( (map (lambda (x) (length (remq x SELECT))) SELECT) [make-list 50 49]  )] ;; all different
+  [let* ( (source (build-vector 100 (lambda (n) n)))
+          (select (vector->list [vector-sample source 50] )))
+    (expect ( (length select) 50 )
+            ( (list? (for-all memq select (make-list 50 (vector->list source)))) #t )  ;; all from source
+            ( (map (lambda (x) (length (remq x select))) select) (make-list 50 49)) )] ;; all different
                                                                                             ;
 (define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
   ;; KWarg is [key . value]; produce list of default values overridden by arg values
@@ -442,7 +420,7 @@
   (apply * (sp-column-dimensions sp)))
 (define init-connected-pct (fx10k<- 0.5));; Fix10k
                                                                                             ;
-;; -- Connections --
+;; -- Compute --
                                                                                             ;
 (define (connected-inputs sp cx)         ;; SP ColumnX -> InputVec
   ;; produce bitwise vector of whether permanence of synapses of column > connected threshold
@@ -486,6 +464,25 @@
       (make-overlap (int<- (fx10k* bf (count ov))) (colx ov)))
     overlaps (sp-boost-factors sp)))
                                                                                             ;
+(define (compute sp input-vector learn)  ;; SP InputVec Boolean -> (listof ColumnX)
+  ;; produce active columns from input; optionally update sp if learning
+  (sp-iteration-num-set! sp (add1 (sp-iteration-num sp)))
+  (when learn (sp-iteration-learn-num-set! sp (add1 (sp-iteration-learn-num sp))))
+  (let* ((overlaps (calculate-overlap sp input-vector))         ;; (ColVecOf OverlapX)
+         (active-columns                                        ;; (listof ColumnX)
+           (inhibit-columns sp (if learn
+                                   (boosted-overlaps sp overlaps)
+                                   overlaps))))
+    (when learn
+      (adapt-synapses sp input-vector active-columns)
+      (update-duty-cycles sp overlaps active-columns)
+      (bump-up-weak-columns sp)
+      (update-boost-factors sp)
+      (when (zero? (mod (sp-iteration-num sp) (sp-update-period sp)))
+          (sp-inhibition-radius-set! sp (inhibition-radius sp))
+          (update-min-duty-cycles sp)))
+    active-columns))
+                                                                                            ;
 ;; -- Duty cycles --
                                                                                             ;
 (define (update-min-duty-cycles sp)      ;; SP ->
@@ -522,11 +519,11 @@
                 (int<- (/ (+ (* dc (- period 1)) ni) period)))
               duty-cycles new-input))
 
-  [define (VEC5 x) (make-vector 5 x)]
-  [expect ( [update-duty-cycles-helper (VEC5 1000) (vec5    0) 1000] (VEC5  999) )
-          ( [update-duty-cycles-helper (VEC5 1000) (vec5 1000) 1000] (VEC5 1000) )
-          ( [update-duty-cycles-helper (VEC5 1000) '#(2000 4000 5000 6000 7000) 1000]
-                                                   '#(1001 1003 1004 1005 1006)  )]
+  (let ((vec5 (lambda (x) (make-vector 5 x))))
+    [expect ( [update-duty-cycles-helper (vec5 1000) (vec5    0) 1000] (vec5  999) )
+            ( [update-duty-cycles-helper (vec5 1000) (vec5 1000) 1000] (vec5 1000) )
+            ( [update-duty-cycles-helper (vec5 1000) '#(2000 4000 5000 6000 7000) 1000]
+                                                     '#(1001 1003 1004 1005 1006)  )])
                                                                                             ;
 (define (update-duty-cycles              ;; SP (ColVecOf OverlapX) (listof ColumnX) ->
           sp overlaps active-columns)
@@ -542,8 +539,9 @@
     (sp-active-duty-cycles-set!  sp 
       (update-duty-cycles-helper (sp-active-duty-cycles  sp) active-array  (sp-duty-cycle-period sp)))))
 
-  [define SPDC (default-sp '(4) '(2) '[overlap-duty-cycles . #(0 0)] '[active-duty-cycles . #(0 0)])]
-  [expect ((begin [update-duty-cycles SPDC '#(0 0) '()] [sp-overlap-duty-cycles SPDC]) '#(0 0) )]
+  [sp-overlap-duty-cycles-set! SP42 '#(0 0)]
+  [sp-active-duty-cycles-set!  SP42 '#(0 0)]
+  [expect ((begin [update-duty-cycles SP42 '#(0 0) '()] [sp-overlap-duty-cycles SP42]) '#(0 0) )]
                                                                                             ;
 ;; -- Inhibition radius --
                                                                                             ;
@@ -576,9 +574,9 @@
                           (if (zero? row) l
                             (cons (bitwise-span row) l))))]))))
   
-  [define SP2221 (default-sp '(2 2) '(2 1)
-                  `[potential-pools . ,(vector (COL 0 2001 2001 0) (COL 0))])]
-  [expect ( [avg-connected-span-2d SP2221 0] 3/2 )]
+  (let ((SP2221 (default-sp '(2 2) '(2 1)
+                  `[potential-pools . ,(vector (COL 0 2001 2001 0) (COL 0))])))
+    [expect ( [avg-connected-span-2d SP2221 0] 3/2 )])
                                                                                             ;
 (define (inhibition-radius sp)           ;; SP -> Nat
   ;; produce new inhibition radius
@@ -716,25 +714,19 @@
                                                                  (map / inp-dims col-dims)))))))
         (ravel2 input-coords inp-dims)))))
 
-  [define SP512 (default-sp '(1 1024) '(1 2048) '[potential-radius . 512])]
-  [expect ( [map-column SP512    0]    0 )
-          ( [map-column SP512 2047] 1023 )]
-  [define SP124 (default-sp '(12) '(4) '[potential-radius . 2])]
-  [define SP44  (default-sp '(4) '(4))]
-  [expect ( [map-column SP124 0]  1 )
-          ( [map-column SP124 3] 10 )]
-  [expect ( [map-column SP44  0] 0 )
-          ( [map-column SP44  3] 3 )]
-  [define SP2D1 (default-sp '(36 12) '(12 4))]
-  [define SP2D2 (default-sp '(3 5) '(4 4))]
-  [expect ( [map-column SP2D1  0]  13 )
-          ( [map-column SP2D1  4]  49 )
-          ( [map-column SP2D1  5]  52 )
-          ( [map-column SP2D1  7]  58 )
-          ( [map-column SP2D1 47] 418 ) ]
-  [expect ( [map-column SP2D2  0]   0 )
-          ( [map-column SP2D2  3]   4 )
-          ( [map-column SP2D2 15]  14 ) ]
+  [let ((SP11024 (default-sp '(1 1024) '(1 2048) '[potential-radius . 512])))
+    (expect ( [map-column SP11024    0]    0 )
+            ( [map-column SP11024 2047] 1023 ))]
+  [let ((SP124 (default-sp '(12) '(4) '[potential-radius . 2]))
+        (SP44 (default-sp '(4) '(4))))
+    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP124 i] (add1 (* 3 i)) )))
+    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP44  i] i )))]
+  [let ((SP2D1 (default-sp '(36 12) '(12 4)))
+        (SP2D2 (default-sp '(3 5) '(4 4))))
+    (do ((i 0 (add1 i))) ((= i 5)) (expect ( [map-column SP2D1 (list-ref '( 0  4  5  7  47) i)]
+                                                               (list-ref '(13 49 52 58 418) i))))
+    (do ((i 0 (add1 i))) ((= i 3)) (expect ( [map-column SP2D2 (list-ref '(0 3 15) i)]
+                                                               (list-ref '(0 4 14) i))))]
                                                                                             ;
 (define (map-potential-v sp cx)          ;; SP ColumnX -> (vectorof InputX)
   ;; produce vector of potential input indices for column
@@ -743,14 +735,14 @@
          (num-potential (int<- (* (vector-length column-inputs) (sp-potential-pct sp)))))
     (vector-sample column-inputs num-potential)))
 
-  [define (SPNNPP ni nc pr pp)
-            (default-sp (list ni) (list nc) (cons 'potential-radius pr) (cons 'potential-pct pp))]
-  [expect ( (vector-sort < [map-potential-v (sp 12 4 2 1) 0])  '#(0 1 2 3)   )
-          ( (vector-sort < [map-potential-v (sp 12 4 2 1) 2])  '#(5 6 7 8 9) )
-          ( (vector-length [map-potential-v (sp 12 4 2 0.5) 0])  2           )
-          ( [map-potential-v (sp 1 1 2 1.0) 0] '#(0) )]
-  [define SP11024 (default-sp '(1 1024) '(1 2048) '[potential-radius . 2] '[potential-pct . 1])]
-  [expect ( [map-potential-v SP11024 1023] '#(510 512 513 511 509) )]
+  (let ((sp (lambda (ni nc pr pp)
+              (default-sp (list ni) (list nc) (cons 'potential-radius pr) (cons 'potential-pct pp)))))
+    [expect ( (vector-sort < [map-potential-v (sp 12 4 2 1) 0])  '#(0 1 2 3)   )
+            ( (vector-sort < [map-potential-v (sp 12 4 2 1) 2])  '#(5 6 7 8 9) )
+            ( (vector-length [map-potential-v (sp 12 4 2 0.5) 0])  2           )
+            ( [map-potential-v (sp 1 1 2 1.0) 0] '#(0) )])
+  [let ((SP11024 (default-sp '(1 1024) '(1 2048) '[potential-radius . 2] '[potential-pct . 1])))
+    (expect ( [map-potential-v SP11024 1023] '#(510 512 513 511 509) ))]
                                                                                             ;
 ;; -- Boost factors --
                                                                                             ;
@@ -777,9 +769,9 @@
         (boost-func sp adc target-density))
       (sp-active-duty-cycles sp))))
         
-  [define SP16 (default-sp '(1) '(6) '[boost-strength . 10.0] 
+  (define SP16 (default-sp '(1) '(6) '[boost-strength . 10.0] 
                 '[num-active-columns-per-inh-area . 1] '[inhibition-radius . 3]
-                `[active-duty-cycles . ,(fx10k<- '#(0.1 0.3 0.02 0.04 0.7 0.12))])]
+                `[active-duty-cycles . ,(fx10k<- '#(0.1 0.3 0.02 0.04 0.7 0.12))]))
   [expect ([boost-factors-global SP16] '#(19477 2636 43348 35490 0048 15947) )]
                                                                                             ;
 (define (boost-factors-local sp)         ;; SP -> (ColVecOf BoostFactor)
@@ -835,11 +827,11 @@
                    (next (append swi this-batch) next-top)]            ;; append & go for more
                   [else (append swi (last-batch))])))))))              ;; enough active cols
 
-  [define SP10 (default-sp '(0) '(10) '[stimulus-threshold . 6])]
-  [expect ((list-sort < [inhibit-columns-global SP10 (list->overlaps '(1 2 1 4 8 3 12 5 4 1)) 0.3]) '(4 6)       )
-          ((list-sort < [inhibit-columns-global SP10 (list->overlaps '(1 2 3 4 5 6 7 8 9 10)) 0.5]) '(5 6 7 8 9) )
-          ((let ((l (list-sort < [inhibit-columns-global SP10 (list->overlaps '(1 1 1 7 7 7 7 8 9 10)) 0.5])))
-              (and (member (car l) '(3 4 5)) (member (cadr l) '(4 5 6)) (equal? (cddr l) '(7 8 9)))) #t )]
+  (let ((SP010 (default-sp '(0) '(10) '[stimulus-threshold . 6])))
+    [expect ((list-sort < [inhibit-columns-global SP010 (list->overlaps '(1 2 1 4 8 3 12 5 4 1)) 0.3]) '(4 6)       )
+            ((list-sort < [inhibit-columns-global SP010 (list->overlaps '(1 2 3 4 5 6 7 8 9 10)) 0.5]) '(5 6 7 8 9) )
+            ((let ((l (list-sort < [inhibit-columns-global SP010 (list->overlaps '(1 1 1 7 7 7 7 8 9 10)) 0.5])))
+                (and (member (car l) '(3 4 5)) (member (cadr l) '(4 5 6)) (equal? (cddr l) '(7 8 9)))) #t )])
                                                                                             ;
 (define (tied-overlaps overlaps this-ov) ;; (vectorof OverlapX) (OverlapX) -> (vectorof ColumnX)
   ;; produce indices in neighborhood for overlaps with same count as this-ov
@@ -849,9 +841,9 @@
         (if (= (count ov) (count this-ov)) cx #f))
       overlaps)))
 
-  [define (MO c x) (make-overlap c x)]
-  [expect ( [tied-overlaps (list->overlaps '(1 2 3 1 3))       (MO 3 0)] '#(2 4) )
-          ( [tied-overlaps (vector (MO 3 2) (MO 1 3) (MO 3 4)) (MO 3 0)] '#(0 2) )]
+  (let ((mo (lambda (c x) (make-overlap c x))))
+    [expect ( [tied-overlaps (list->overlaps '(1 2 3 1 3))       (mo 3 0)] '#(2 4) )
+            ( [tied-overlaps (vector (mo 3 2) (mo 1 3) (mo 3 4)) (mo 3 0)] '#(0 2) )])
                                                                                             ;
 (define (inhibit-columns-local           ;; SP (ColVecOf OverlapX) Num -> (listof ColumnX)
           sp overlaps density)
@@ -871,10 +863,10 @@
                 (vector-set! active cx #t)))))))
     (vector-indices active)))
     
-  [define SP010 (default-sp '(0) '(10) '[stimulus-threshold . 6])]
-  [expect ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 2 1 4 8 3 12 5 4 1)) 1.0]) '(4 6)     )
-          ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 2 3 4 5 6 7 8 9 10)) 1.0]) '(6 7 8 9) )
-          ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 1 1 7 7 7 7 8 9 10)) 0.5]) '() )]
+  (let ((SP010 (default-sp '(0) '(10) '[stimulus-threshold . 6])))
+    [expect ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 2 1 4 8 3 12 5 4 1)) 1.0]) '(4 6)       )
+            ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 2 3 4 5 6 7 8 9 10)) 1.0]) '(6 7 8 9) )
+            ((list-sort < [inhibit-columns-local SP010 (list->overlaps '(1 1 1 7 7 7 7 8 9 10)) 0.5]) '() )])
                                                                                             ;
 (define (inhibit-columns sp overlaps)    ;; SP (ColVecOf OverlapX) -> (listof ColumnX)
   ;; produce list of indices of active columns
@@ -907,24 +899,106 @@
     (sp-connected-synapses-set!          sp (connected-synapses sp))
     (sp-inhibition-radius-set!           sp (inhibition-radius sp))
     sp))
+
+;; ==================================== Examples ====================================
+
+(define (random-bits size)
+  (let ((w (expt 2 32)))
+    (do ((i 1 (add1 i)) (r (random w) (+ (* w r) (random w)))) ((= i (div size 32)) r))))
                                                                                             ;
-(define (compute sp input-vector learn)  ;; SP InputVec Boolean -> (listof ColumnX)
-  ;; produce active columns from input; optionally update sp if learning
-  (sp-iteration-num-set! sp (add1 (sp-iteration-num sp)))
-  (when learn (sp-iteration-learn-num-set! sp (add1 (sp-iteration-learn-num sp))))
-  (let* ((overlaps (calculate-overlap sp input-vector))         ;; (ColVecOf OverlapX)
-         (active-columns                                        ;; (listof ColumnX)
-           (inhibit-columns sp (if learn
-                                   (boosted-overlaps sp overlaps)
-                                   overlaps))))
-    (when learn
-      (adapt-synapses sp input-vector active-columns)
-      (update-duty-cycles sp overlaps active-columns)
-      (bump-up-weak-columns sp)
-      (update-boost-factors sp)
-      (when (zero? (mod (sp-iteration-num sp) (sp-update-period sp)))
-          (sp-inhibition-radius-set! sp (inhibition-radius sp))
-          (update-min-duty-cycles sp)))
-    active-columns))
+(define (percent-overlap x1 x2)
+  (let ((min-x1x2 (min (bitwise-bit-count x1) (bitwise-bit-count x2))))
+    (if (positive? min-x1x2)
+        (* 100 (/ (bitwise-bit-count (bitwise-and x1 x2)) min-x1x2))
+        0)))
                                                                                             ;
-)
+(define (percent->string x)
+  (string-append (if (< x 10) "  " (if (< x 100) " " "")) 
+                 (number->string (inexact (/ (int<- (* 10 x)) 10))) "%"))
+                                                                                            ;
+(define (corrupt-vector vector size noise-level)
+  (let* ( (bit-xs (vector-sample (build-vector size id) (int<- (* noise-level size))))
+          (flip   (vector->bitwise bit-xs)))
+    (bitwise-xor vector flip)))
+                                                                                            ;
+(define (hello-sp) 
+  (display "See nupic/examples/sp/hello_sp.py") (newline)
+  (letrec* ( 
+    (inp-dims '(32 32))
+    (col-dims '(64 64))
+    (ni   (apply * inp-dims))
+    (sp   (make-sp* inp-dims col-dims '[global-inhibition . #t]
+          `[potential-radius                . ,ni]
+          `[num-active-columns-per-inh-area . ,(int<- (* 0.02 (apply * col-dims)))]
+          `[syn-perm-active-inc             . ,(perm<- 0.01)]
+          `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
+    (create-input (lambda () (random-bits ni)))
+    (run          (lambda (description input learn prev-cols)
+                    (let* ( (cols  (list-sort < (compute sp input learn)))
+                            (score (percent-overlap (list->bitwise cols) (list->bitwise prev-cols))))
+                      (for-each display `(,description ": " ,(percent->string score) " ("))
+                      (for-each (lambda (x) (display x) (display " ")) (take 15 cols)) 
+                      (display "... ") (display (car (reverse cols))) (display ")") (newline)
+                      cols)))
+    (input1 (create-input))
+    (input2 (create-input))
+    (input3 (create-input))
+    (input4 (corrupt-vector input3 ni 0.1))
+    (input5 (corrupt-vector input4 ni 0.2)))
+  (let* (
+      (cols1 (run "Random 1" input1 #f '()))
+      (cols2 (run "Random 2" input2 #f cols1))
+      (cols3 (run "Random 3" input3 #t cols2))
+      (cols4 (run "Repeat 3" input3 #t cols3)))
+    (run "Noise .1" input4 #t cols4)
+    (run "Noise .3" input5 #t cols4)))
+  'ok)
+                                                                                            ;
+(define (sp-tutorial)
+  (display "See nupic/examples/sp/sp_tutorial.py") (newline)
+  (let* ( 
+      (input-dimensions  '(1024 1))
+      (column-dimensions '(2048 1))
+      (input-size    (apply * input-dimensions))
+      (column-number (apply * column-dimensions))
+      (create-input  (lambda (_) (random-bits input-size)))
+      (input-array   (create-input 0))
+      (sp   (make-sp* input-dimensions column-dimensions
+            `[potential-radius                . ,(int<- (* 0.5 input-size))]
+            `[num-active-columns-per-inh-area . ,(int<- (* 0.02 column-number))]
+            `[global-inhibition               . #t]
+            `[syn-perm-active-inc             . ,(perm<- 0.01)]
+            `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
+      (active-cols   (compute sp input-array #f))
+      (all-counts    (vector-map count (calculate-overlap sp input-array)))
+      (active-counts (vector-refs all-counts (list->vector active-cols)))
+      (mean          (lambda (vec) (int<- (vector-average vec))))
+      (for-each-noise-level
+        (lambda (description proc)
+          (display description) (newline)
+          (do ((i 0 (add1 i))) ((= i 11) )
+            (let ((noise-level (/ i 10.0)))
+              (for-each display
+                `(,noise-level "  " ,(percent->string (proc noise-level)) #\newline)))))))
+    (for-each display 
+      `("Figure 1 - overlap count means" #\newline
+        "all cols: " ,(mean all-counts) #\newline
+        "  active: " ,(mean active-counts) #\newline))
+    (for-each-noise-level "Figure 2 - noise:overlap linear" (lambda (nl)
+      (percent-overlap input-array (corrupt-vector input-array input-size nl))))
+    (for-each-noise-level "Figure 3 - without training" (lambda (nl)
+      (percent-overlap (list->bitwise (compute sp input-array #f))
+                       (list->bitwise (compute sp 
+                         (corrupt-vector input-array input-size nl) #f)))))
+    (let* ( (num-examples 10)
+            (input-vectors (build-vector num-examples create-input))
+            (epochs 30))
+      (do ((epoch 0 (add1 epoch))) ((= epoch epochs))
+        (do ((i 0 (add1 i))) ((= i num-examples))
+          (compute sp (vector-ref input-vectors i) #t)))
+      (for-each-noise-level "Figure 4 - with training: sigmoid" (lambda (nl)
+        (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
+                         (list->bitwise (compute sp 
+                           (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
+
+  #;(time (sp-tutorial))                 ;; uncomment to run on Chez load-program
