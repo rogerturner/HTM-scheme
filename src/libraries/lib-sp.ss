@@ -52,7 +52,9 @@
     random 
     vector-sample
     key-word-args
-    perm<- 
+    perm<-
+    overlap-count
+    calculate-overlap
     make-sp*
     compute)
     
@@ -321,6 +323,9 @@
                                                                                             ;
 (define (count overlap)                  ;; OverlapX -> Nat
   (fxdiv overlap %max-columns%))
+                                                                                            ;
+(define (overlap-count overlap)          ;; OverlapX -> Nat
+  (count overlap))
                                                                                             ;
 (define (colx overlap)                   ;; OverlapX -> ColumnX
   (fxmod overlap %max-columns%))
