@@ -1,10 +1,33 @@
-#lang racket                 ;; #!r6rs for Chez Scheme
+#!r6rs                     ;; for Chez Scheme
+;;#lang racket             ;; for Racket
+;; ========= HTM-scheme Hello-SP example Copyright 2017 Roger Turner. =========
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Based on hello_sp.py which is part of the Numenta Platform for        ;;
+  ;; Intelligent Computing (NuPIC) Copyright (C) 2013-2016, Numenta, Inc.  ;;
+  ;;                                                                       ;;
+  ;; This program is free software: you can redistribute it and/or modify  ;;
+  ;; it under the terms of the GNU Affero Public License version 3 as      ;;
+  ;; published by the Free Software Foundation.                            ;;
+  ;;                                                                       ;;
+  ;; This program is distributed in the hope that it will be useful,       ;;
+  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of        ;;
+  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                  ;;
+  ;; See the GNU Affero Public License for more details.                   ;;
+  ;;                                                                       ;;
+  ;; You should have received a copy of the GNU Affero Public License      ;;
+  ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-#;(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+  ;; Translated from NuPIC hello_sp.py, see comments there for more info.
+
+(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+        (libraries htm-prelude)
         (libraries lib-sp))
 
-(require rnrs)
-(require (file "../src/libraries/lib-sp.ss"))
+#;(require                 ;; for Racket
+  rnrs
+  (file "../src/libraries/htm-prelude.ss")
+  (file "../src/libraries/lib-sp.ss"))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))
