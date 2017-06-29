@@ -138,7 +138,7 @@
           [else
             (let ((vec (vector-take source source-length)))
               (do ((n 0 (add1 n))) ((fx=? n shuffle) (vector-take vec size))
-                (let* ((r (random (fx- source-length n)))
+                (let* ((r (fx+ n (random (fx- source-length n))))
                        (t (vector-ref vec r)))
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
