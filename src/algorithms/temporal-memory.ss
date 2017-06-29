@@ -495,7 +495,7 @@
                 (tm-permanence-increment tm) (tm-permanence-decrement tm))
             (let ((n-grow-desired
                     (fx- (tm-max-new-synapse-count tm)                         ;; 46. newSynapseCount = (SAMPLE_SIZE -
-                         (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 47.   numActivePotentialSynapses(t-1, learningSegment)
+                         (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 47.   numActivePotentialSynapses(t-1, learningSegment))
                                         (seg-flatx (car best-matching-segment)) 0))))
               (when (fxpositive? n-grow-desired)                               ;; 48. growSynapses(learningSegment, newSynapseCount)
                 (grow-synapses tm (car best-matching-segment) n-grow-desired (tm-winner-cells tm)))))
@@ -540,9 +540,9 @@
             (let ((synapses (seg-synapses (vector-ref (tm-seg-register tm) flatx))))
               (do ((sx 0 (add1 sx))) ((fx=? sx (synapses-length synapses)))    ;; 58. for synapse in segment.synapses
                 (let ((synapse (synapses-ref synapses sx)))
-                  (when (fx=? cellx (prex synapse))                            ;; 63. if synapse.permanence >= 0 then
+                  (when (fx=? cellx (prex synapse))                            ;; 63. if synapse.permanence ≥ 0 then
                     (hashtable-update! napsfs flatx add1 0)                    ;; 64.   numActivePotential += 1
-                      (when (fx>=? (perm synapse) threshold)                   ;; 60. if synapse.permanence >= CONNECTED_PERMANENCE then
+                      (when (fx>=? (perm synapse) threshold)                   ;; 60. if synapse.permanence ≥ CONNECTED_PERMANENCE then
                         (hashtable-update! nacsfs flatx add1 0)))))))          ;; 61.   numActiveConnected += 1
           (vector-ref (tm-pre-index tm) cellx)))
       active-presynaptic-cells)
