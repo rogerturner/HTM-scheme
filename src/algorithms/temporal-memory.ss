@@ -412,8 +412,7 @@
             (if (fx=? column actsegs-colx)                                     ;; 3.   if count(segmentsForColumn(column, activeSegments(t-1))) > 0 then
                 (let-values ([(nextactseg actcells wincells)                   ;; 4.     activatePredictedColumn(column)
                     (activate-predicted-column tm column actsegs actcells wincells learn)])
-                  (loop (if (fx=? column matsegs-colx) actcols (cdr actcols))
-                        nextactseg matsegs actcells wincells))
+                  (loop actcols nextactseg matsegs actcells wincells))
                 (let-values ([(nextmatseg actcells wincells)                   ;; 6.   else burstColumn(column)
                     (burst-column tm column matsegs actcells wincells learn)])
                   (loop (cdr actcols) actsegs nextmatseg actcells wincells)))
@@ -421,8 +420,12 @@
                 (let ((nextmatseg (if learn                                    ;; 50.   if LEARNING_ENABLED
                                     (punish-predicted-column tm column matsegs);; 9.      punishPredictedColumn(column)
                                     (skip-col tm column matsegs))))
-                  (loop (cdr actcols) actsegs nextmatseg actcells wincells))
-                (loop (cdr actcols) actsegs matsegs actcells wincells)))
+                  (loop (if (null? actcols) actcols (cdr actcols))
+                        (skip-col tm column actsegs)
+                        nextmatseg actcells wincells))
+                (loop (if (null? actcols) actcols (cdr actcols))
+                      (skip-col tm column actsegs)
+                      matsegs actcells wincells)))
         (begin                                ;; all active cols and segs handled: set prev active/winner cells for next iteration
           (tm-active-cells-set! tm actcells)
           (tm-winner-cells-set! tm wincells))))))
@@ -515,11 +518,12 @@
           column column-matching-segments)                                     ;; 49. function punishPredictedColumn(column)
   ;; weaken synapses in segments of column; step to next column's segments
   (let loop ((segs column-matching-segments))                                  ;; 51. for segment in segmentsForColumn(column, matchingSegments(t-1))
-    (when (fx=? column (segs->colx tm segs))
-      (when (fxpositive? (tm-predicted-segment-decrement tm))                  ;; 52-54. [use adapt-segment to decrement permanences]
-        (adapt-segment tm segs (tm-active-cells tm) (- (tm-predicted-segment-decrement tm)) 0))
-      (loop (cdr segs)))
-    segs))
+    (if (fx=? column (segs->colx tm segs))
+      (begin
+        (when (fxpositive? (tm-predicted-segment-decrement tm))                ;; 52-54. [use adapt-segment to decrement permanences]
+          (adapt-segment tm segs (tm-active-cells tm) (- (tm-predicted-segment-decrement tm)) 0))
+        (loop (cdr segs)))
+      segs)))
                                                                                             ;
 ;; --- Activate a set of dendrite segments. ---
                                                                                             ;
