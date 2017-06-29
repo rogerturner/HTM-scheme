@@ -35,7 +35,7 @@
                                                                                             ;
 ;; X, Y, Z      = type parameters (arbitrary types in function type specification etc)
 ;; X Y -> Z     = function with argument types X, Y and result type Z
-;; Nat          = natural number (including zero) (scheme Fixnum or exact Number)
+;; Nat          = natural number (including zero) (Scheme Fixnum or exact Integer)
 ;; Fix10k       = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
 ;; InputVec     = Number (Bignum), interpreted bitwise as (vectorof Boolean)
 ;; InputX       = Nat [0 - MAXINP], index of bit in InputVec
@@ -244,7 +244,7 @@
           [else
             (let ((vec (vector-take source source-length)))
               (do ((n 0 (add1 n))) ((fx=? n shuffle) (vector-take vec size))
-                (let* ((r (random (fx- source-length n)))
+                (let* ((r (fx+ n (random (fx- source-length n))))
                        (t (vector-ref vec r)))
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
