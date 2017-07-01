@@ -446,7 +446,7 @@
                     (fx- (tm-max-new-synapse-count tm)
                          (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 23.   numActivePotentialSynapses(t-1, segment)
                                         (seg-flatx segment) 0))))
-              (when (fxpositive? n-grow-desired)
+              (when (positive? n-grow-desired)
                 (grow-synapses tm segment n-grow-desired (tm-winner-cells tm))))) ;; 24. growSynapses(segment, newSynapseCount)
           (let ((this-cell (seg-cellx segment)))
             (if (fx=? this-cell prev-cell)
@@ -618,7 +618,7 @@
                                 [ else (loop (cons (car pwc) cs) (cdr pwc)) ])))
           (n-actual (fxmin n-desired-new-synapses (length candidates)))
           (overrun  (fx- (fx+ num-synapses n-actual) (tm-max-synapses-per-segment tm))))
-    (when (fxpositive? overrun)
+    (when (positive? overrun)
       (destroy-min-permanence-synapses tm segment overrun prev-winner-cells))
     (let* ( (num-synapses (synapses-length synapses))
             (n-actual (fxmin n-actual (fx- (tm-max-synapses-per-segment tm) num-synapses)))
@@ -640,9 +640,9 @@
 (define (skip-col tm column segments)    ;; TM ColX (listof Seg) -> (listof Seg)
   ;; step to next column's segments
   (let loop ((segments segments))
-    (if (fx=? column (segs->colx tm segments))
-        (loop (cdr segments))
-        segments)))
+    (when (fx=? column (segs->colx tm segments))
+      (loop (cdr segments)))
+    segments))
                                                                                             ;
 ;; --- Exported functions ---
                                                                                             ;
@@ -714,100 +714,3 @@
         (for-each display `("Predicted columns:" ,(format-row pred-col-state) #\newline))))))
 
   #;(time (hello-tm))                 ;; uncomment to run on Chez load-program
-
-(define tm-perm perm<-)
-(define temporal-memory make-tm*)
-
-(define (list->bitwise ns)               ;; (listof Nat) -> Number
-  ;; produce bitwise value by setting bits indexed by elements of ns
-  (fold-left (lambda (acc n) (bitwise-copy-bit acc n 1)) 0 ns))
-  
-(define (vector->bitwise vec)            ;; (vectorof Nat) -> Number
-  (list->bitwise (vector->list vec)))
-                                                                                            ;
-(define (tm-get-active-cols tm)          ;; TM -> (listof ColX)
-  (let loop ((previous-colx -1) (active-cols '()) (cells (tm-active-cells tm)))
-    (cond [ (null? cells) active-cols ]
-          [ (fx=? (cellx->colx tm (car cells)) previous-colx) 
-              (loop previous-colx active-cols (cdr cells)) ]
-          [ else (loop (cellx->colx tm (car cells)) 
-                       (cons (cellx->colx tm (car cells)) active-cols) (cdr cells)) ])))
-                                                                                                ;
-
-(define (bitwise->list vec)          ;; InputVec -> (listof Nat)
-  ;; produce indices of set bits in vec
-  (let loop ((vec vec) (result '()))
-    (if (positive? vec)
-      (let ((b (bitwise-first-bit-set vec)))
-        (loop (bitwise-copy-bit vec b 0) (cons b result)))
-      result)))
-
-(define (cols->string cols)              ;; (listof ColX) -> String [of 0|1]
-  (list->string (reverse (string->list (number->string (list->bitwise cols) 2)))))
-
-(define (accuracy current predicted)     ;; (listof ColX) (listof ColX) -> Number
-  (let ((num-predicted-cols (length predicted))
-        (num-common-cols (bitwise-bit-count (bitwise-and
-                            (list->bitwise current)
-                            (list->bitwise predicted)))))
-    (if (positive? num-predicted-cols)
-        (/ num-common-cols num-predicted-cols)
-        0)))
-      
-(define (corrupt-vector v1 noise-level num-active-cols) ;; InputVec Number ColX -> InputVec
-  (let* ( (bit-xs (vector-sample (build-vector num-active-cols id) 
-                                 (int<- (* noise-level num-active-cols))))
-          (flip   (vector->bitwise bit-xs)))
-    (bitwise-xor v1 flip)))
-                                                                                            ;
-(define (show-predictions tm sequence)
-  (do ((k 0 (add1 k))) ((= k 6))
-    (tm-reset tm)
-    (tm-compute tm (bitwise->list (vector-ref sequence k)) #f)
-    (for-each display `(
-      "--- " ,(string-ref "ABCDXY" k) " ---" #\newline))
-    (for-each display `(
-      "   Active cols: " ,(cols->string (tm-get-active-cols tm)) #\newline))
-    (for-each display `(
-      "Predicted cols: " ,(cols->string (tm-get-predictive-cols tm)) #\newline))))
-  
-(define (train tm sequence time-steps noise-level)
-  (do ((t 0 (add1 t))) ((= t time-steps))
-    (tm-reset tm)
-    (let ((predicted-cols '()))
-      (do ((k 0 (add1 k))) ((= k 4))
-        (let ((v (corrupt-vector (vector-ref sequence k) noise-level 1024)))
-          (tm-compute tm (bitwise->list v) #t))
-        (for-each display `(
-          "Accuracy: " ,(accuracy (tm-get-active-cols tm) predicted-cols) #\newline))
-        (set! predicted-cols (tm-get-predictive-cols tm))))))
-    
-(define (tm-high-order)
-  (let* ( (tm (temporal-memory '(1024) 8
-                `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.3)]
-                `[min-threshold               . 15]
-                `[max-new-synapse-count       . 40]
-                `[permanence-increment        . ,(tm-perm 0.1)]
-                `[permanence-decrement        . ,(tm-perm 0.1)]
-                `[activation-threshold        . 15]
-                `[predicted-segment-decrement . ,(tm-perm 0.01)]))
-          (sparsity 0.02)
-          (sparse-cols (int<- (* 1024 sparsity)))
-          (bits (lambda (b) 
-                  (bitwise-copy-bit-field 0 (* b sparse-cols) (* (add1 b) sparse-cols) -1)))
-          (sdr-A (bits 0))
-          (sdr-B (bits 1))
-          (sdr-C (bits 2))
-          (sdr-D (bits 3))
-          (sdr-X (bits 4))
-          (sdr-Y (bits 5))
-          (seq1 (vector sdr-A sdr-B sdr-C sdr-D))
-          (seq2 (vector sdr-X sdr-B sdr-C sdr-Y))
-          (seqT (vector sdr-A sdr-B sdr-C sdr-D sdr-X sdr-Y)))
-    
-    (train tm seq1 10 0.0)
-    (show-predictions tm seqT)
-
-    (train tm seq2 10 0.0)
-    (show-predictions tm seqT)))
