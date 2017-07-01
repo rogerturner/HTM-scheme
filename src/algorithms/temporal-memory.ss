@@ -446,7 +446,7 @@
                     (fx- (tm-max-new-synapse-count tm)
                          (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 23.   numActivePotentialSynapses(t-1, segment)
                                         (seg-flatx segment) 0))))
-              (when (positive? n-grow-desired)
+              (when (fxpositive? n-grow-desired)
                 (grow-synapses tm segment n-grow-desired (tm-winner-cells tm))))) ;; 24. growSynapses(segment, newSynapseCount)
           (let ((this-cell (seg-cellx segment)))
             (if (fx=? this-cell prev-cell)
@@ -618,7 +618,7 @@
                                 [ else (loop (cons (car pwc) cs) (cdr pwc)) ])))
           (n-actual (fxmin n-desired-new-synapses (length candidates)))
           (overrun  (fx- (fx+ num-synapses n-actual) (tm-max-synapses-per-segment tm))))
-    (when (positive? overrun)
+    (when (fxpositive? overrun)
       (destroy-min-permanence-synapses tm segment overrun prev-winner-cells))
     (let* ( (num-synapses (synapses-length synapses))
             (n-actual (fxmin n-actual (fx- (tm-max-synapses-per-segment tm) num-synapses)))
@@ -640,9 +640,9 @@
 (define (skip-col tm column segments)    ;; TM ColX (listof Seg) -> (listof Seg)
   ;; step to next column's segments
   (let loop ((segments segments))
-    (when (fx=? column (segs->colx tm segments))
-      (loop (cdr segments)))
-    segments))
+    (if (fx=? column (segs->colx tm segments))
+      (loop (cdr segments))
+      segments)))
                                                                                             ;
 ;; --- Exported functions ---
                                                                                             ;
