@@ -116,11 +116,14 @@
 (define %max-perm% 9999)                 ;; Fixnum
 (define %min-perm% 0)                    ;; Fixnum
                                                                                             ;
-(define (clip-p perm)                    ;; Permanence -> Permanence
-  (fxmax %min-perm% (fxmin %max-perm% perm)))
+(define (clip-max perm)                  ;; Permanence -> Permanence
+  (fxmin %max-perm% perm))
+                                                                                            ;
+(define (clip-min perm)                  ;; Permanence -> Permanence
+  (fxmax %min-perm% perm))
                                                                                             ;
 (define (tm-perm x)                      ;; Number[0.0-.9999] -> Permanence
-  (clip-p (int<- (* x x10k))))
+  (clip-max (clip-min (int<- (* x x10k)))))
                                                                                             ;
 (define tm-defaults                      ;; (listof KWarg)
   `(
@@ -214,8 +217,10 @@
                                                                                             ;
 (define (add-to-pre-index tm prex seg)   ;; TM CellX Segment ->
   ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
-  (vector-set! (tm-pre-index tm) prex 
-    (cons (seg-flatx seg) (vector-ref (tm-pre-index tm) prex))))
+  (let ((flatx (seg-flatx seg))
+        (pre-list (vector-ref (tm-pre-index tm) prex)))
+    (if (or (null? pre-list) (not (fx=? flatx (car pre-list))))
+      (vector-set! (tm-pre-index tm) prex (cons flatx pre-list)))))
                                                                                             ;
 ;; --- Permanences and Synapses ---
                                                                                             ;
@@ -334,8 +339,8 @@
                 (tm-permanence-decrement tm))
             (let ((n-grow-desired                                              ;; 22. newSynapseCount = (SYNAPSE_SAMPLE_SIZE -
                     (fx- (tm-max-new-synapse-count tm)
-                         (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 23.                    numActivePotentialSynapses(t-1, segment))
-                                        (seg-flatx segment) 0))))
+                         (bytevector-u8-ref (tm-num-active-pot-syns-for-seg tm)    ;; 23.                    numActivePotentialSynapses(t-1, segment))
+                                        (seg-flatx segment)))))
               (when (fxpositive? n-grow-desired)
                 (grow-synapses tm segment n-grow-desired                       ;; 24. growSynapses(segment, newSynapseCount)
                                (tm-winner-cells tm)))))
@@ -365,8 +370,8 @@
           (let* ( (synapse (synapses-ref synapses sx))
                   (permanence
                     (if (memv (prex synapse) prev-active-cells)                ;; 17. if synapse.presynapticCell in activeCells(t-1) then
-                      (clip-p (increment-proc (perm synapse)))                 ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
-                      (clip-p (fx- (perm synapse) permanence-decrement)))))    ;; 20. else synapse.permanence -= PERMANENCE_DECREMENT
+                      (clip-max (increment-proc (perm synapse)))               ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
+                      (clip-min (fx- (perm synapse) permanence-decrement)))))  ;; 20. else synapse.permanence -= PERMANENCE_DECREMENT
             (if (zero? permanence)
                 (loop (fx- sx 1) (cons sx synapses-to-destroy))  ;; build s-t-d sorted
                 (begin
@@ -389,8 +394,8 @@
                 (tm-permanence-decrement tm))
             (let ((n-grow-desired
                     (fx- (tm-max-new-synapse-count tm)                         ;; 46. newSynapseCount = (SAMPLE_SIZE -
-                         (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 47.   numActivePotentialSynapses(t-1, learningSegment))
-                                        (seg-flatx (car best-matching-segment)) 0))))
+                         (bytevector-u8-ref (tm-num-active-pot-syns-for-seg tm)    ;; 47.   numActivePotentialSynapses(t-1, learningSegment))
+                                        (seg-flatx (car best-matching-segment))))))
               (when (fxpositive? n-grow-desired)                               ;; 48. growSynapses(learningSegment, newSynapseCount)
                 (grow-synapses tm (car best-matching-segment) n-grow-desired (tm-winner-cells tm)))))
           (values nextmatseg 
@@ -424,47 +429,48 @@
                                                                                             ;
 (define (compute-activity tm             ;; TM (listof CellX) -> (hash Flatx -> Nat) (hash Flatx -> Nat)
           active-presynaptic-cells)
-  ;; produce hashtables mapping indices of segments with pre synapses to count of active cells
-  (let ((napsfs (make-eqv-hashtable))  ;; "num-active-potential-synapses-for-segment"
-        (nacsfs (make-eqv-hashtable))  ;; "num-active-connected-synapses-for-segment"
+  ;; produce counts of segments with potential/connected synapses for active cells
+  (let ((napsfs (make-bytevector (tm-next-flatx tm) 0))  ;; "num-active-potential-synapses-for-segment"
+        (nacsfs (make-bytevector (tm-next-flatx tm) 0))  ;; "num-active-connected-synapses-for-segment"
         (threshold (tm-connected-permanence tm)))
     (for-each                                                                  ;; 59. if synapse.presynapticCell in activeCells(t) then
       (lambda (cellx)
         (for-each                                                              ;; 55. for segment in segments
           (lambda (flatx)
-            (let ((synapses (seg-synapses (vector-ref (tm-seg-register tm) flatx))))
-              (do ((sx 0 (add1 sx))) ((fx=? sx (synapses-length synapses)))    ;; 58. for synapse in segment.synapses
+            (let* ((synapses (seg-synapses (vector-ref (tm-seg-register tm) flatx)))
+                   (n-synapses (synapses-length synapses)))
+              (do ((sx 0 (add1 sx))) ((fx=? sx n-synapses))                    ;; 58. for synapse in segment.synapses
                 (let ((synapse (synapses-ref synapses sx)))
                   (when (fx=? cellx (prex synapse))                            ;; 63. if synapse.permanence ≥ 0 then
-                    (hashtable-update! napsfs flatx add1 0)                    ;; 64.   numActivePotential += 1
+                    (bytevector-u8-set! napsfs flatx 
+                        (add1 (bytevector-u8-ref napsfs flatx)))               ;; 64.   numActivePotential += 1
                       (when (fx>=? (perm synapse) threshold)                   ;; 60. if synapse.permanence ≥ CONNECTED_PERMANENCE then
-                        (hashtable-update! nacsfs flatx add1 0)))))))          ;; 61.   numActiveConnected += 1
+                        (bytevector-u8-set! nacsfs flatx 
+                            (add1 (bytevector-u8-ref nacsfs flatx)))))))))     ;; 61.   numActiveConnected += 1
           (vector-ref (tm-pre-index tm) cellx)))
       active-presynaptic-cells)
     (values nacsfs napsfs)))
                                                                                             ;
 (define (activate-dendrites tm learn)    ;; TM Bool ->
   ;; set active/matching segments lists (sorted by column); set last-used iteration in active segments
-  ;; use compute-activity to locate and count segments with synapses for active cells
   (let*-values (
-    [(num-active-connected num-active-potential) (compute-activity tm (tm-active-cells tm))]
-    [(active-flatxs   active-counts)   (hashtable-entries num-active-connected)]
-    [(matching-flatxs matching-counts) (hashtable-entries num-active-potential)])
+    [(num-active-connected num-active-potential) (compute-activity tm (tm-active-cells tm))])
     (let* ( (segments (tm-seg-register tm))
-            (sorted (lambda (counts flatxs threshold)
+            (sorted (lambda (counts threshold)
                       (list-sort (lambda (sega segb)
-                                   (if (fx=? (seg-cellx sega) (seg-cellx segb))
-                                       (fx<? (seg-flatx sega) (seg-flatx segb))
-                                       (fx<? (seg-cellx sega) (seg-cellx segb))))
+                                    (cond [(fx<? (seg-cellx sega) (seg-cellx segb))]
+                                          [(fx=? (seg-cellx sega) (seg-cellx segb))
+                                              (fx<? (seg-flatx sega) (seg-flatx segb))]
+                                          [else #f]))
                         (do ((i 0 (add1 i)) 
-                             (segs '() (if (fx>=? (vector-ref counts i) threshold)
-                                         (cons (vector-ref segments (vector-ref flatxs i)) segs)
+                             (segs '() (if (fx>=? (bytevector-u8-ref counts i) threshold)
+                                         (cons (vector-ref segments i) segs)
                                          segs)))
-                            ((fx=? i (vector-length counts)) segs))))))
+                            ((fx=? i (bytevector-length counts)) segs))))))
       (tm-active-segments-set!   tm                                            ;; 67. activeSegments(t).add(segment)
-          (sorted active-counts active-flatxs (tm-activation-threshold tm)))   ;; 66. if numActiveConnected ≥ ACTIVATION_THRESHOLD then
+          (sorted num-active-connected (tm-activation-threshold tm)))          ;; 66. if numActiveConnected ≥ ACTIVATION_THRESHOLD then
       (tm-matching-segments-set! tm                                            ;; 70. matchingSegments(t).add(segment)
-          (sorted matching-counts matching-flatxs (tm-min-threshold tm)))      ;; 69. if numActivePotential ≥ LEARNING_THRESHOLD then
+          (sorted num-active-potential (tm-min-threshold tm)))                 ;; 69. if numActivePotential ≥ LEARNING_THRESHOLD then
       (tm-num-active-pot-syns-for-seg-set! tm num-active-potential)))          ;; 72. numActivePotentialSynapses(t, segment) = numActivePotential
   (when learn
     (let loop ((actsegs (tm-active-segments tm)))
@@ -496,8 +502,8 @@
               (bestseg  column-matching-segments)                              ;; 85. bestMatchingSegment = None
               (best-score -1))                                                 ;; 86. bestScore = -1
     (cond [ (fx=? column (segs->colx tm segments))
-            (let ((naps (hashtable-ref (tm-num-active-pot-syns-for-seg tm)
-                                       (seg-flatx (car segments)) 0)))
+            (let ((naps (bytevector-u8-ref (tm-num-active-pot-syns-for-seg tm)
+                                       (seg-flatx (car segments)))))
               (if (fx>? naps best-score)                                       ;; 88. if numActivePotentialSynapses(t-1, segment) > bestScore then
                   (loop (cdr segments) segments naps)
                   (loop (cdr segments) bestseg best-score))) ]                 ;; 89-90. bestMatchingSegment = segment; bestScore = nAPS(t-1, segment)
