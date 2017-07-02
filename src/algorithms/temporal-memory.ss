@@ -411,22 +411,19 @@
         (if (fx=? column actcols-colx)                                         ;; 2. if column in activeColumns(t) then
             (if (fx=? column actsegs-colx)                                     ;; 3.   if count(segmentsForColumn(column, activeSegments(t-1))) > 0 then
                 (let-values ([(nextactseg actcells wincells)                   ;; 4.     activatePredictedColumn(column)
-                    (activate-predicted-column tm column actsegs actcells wincells learn)])
+                              (activate-predicted-column tm column actsegs actcells wincells learn)])
                   (loop actcols nextactseg matsegs actcells wincells))
                 (let-values ([(nextmatseg actcells wincells)                   ;; 6.   else burstColumn(column)
-                    (burst-column tm column matsegs actcells wincells learn)])
-                  (loop (cdr actcols) actsegs nextmatseg actcells wincells)))
+                              (burst-column tm column matsegs actcells wincells learn)])
+                  (loop (if (null? actcols) actcols (cdr actcols))
+                        actsegs nextmatseg actcells wincells)))
             (if (fx=? column matsegs-colx)                                     ;; 8.  else if count(segmentsForColumn(column, matchingSegments(t-1))) > 0 then
                 (let ((nextmatseg (if learn                                    ;; 50.   if LEARNING_ENABLED
                                     (punish-predicted-column tm column matsegs);; 9.      punishPredictedColumn(column)
                                     (skip-col tm column matsegs))))
-                  (loop (if (null? actcols) actcols (cdr actcols))
-                        (skip-col tm column actsegs)
-                        nextmatseg actcells wincells))
-                (loop (if (null? actcols) actcols (cdr actcols))
-                      (skip-col tm column actsegs)
-                      matsegs actcells wincells)))
-        (begin                                ;; all active cols and segs handled: set prev active/winner cells for next iteration
+                  (loop actcols actsegs nextmatseg actcells wincells))
+                (loop actcols (skip-col tm column actsegs) matsegs actcells wincells)))
+        (begin                               ;; all active cols and segs handled: set prev active/winner cells for next iteration
           (tm-active-cells-set! tm actcells)
           (tm-winner-cells-set! tm wincells))))))
                                                                                             ;

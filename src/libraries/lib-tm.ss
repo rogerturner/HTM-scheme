@@ -305,17 +305,14 @@
                   (loop actcols nextactseg matsegs actcells wincells))
                 (let-values ([(nextmatseg actcells wincells)                   ;; 6.   else burstColumn(column)
                     (burst-column tm column matsegs actcells wincells learn)])
-                  (loop (cdr actcols) actsegs nextmatseg actcells wincells)))
+                  (loop (if (null? actcols) actcols (cdr actcols))
+                        actsegs nextmatseg actcells wincells)))
             (if (fx=? column matsegs-colx)                                     ;; 8.  else if count(segmentsForColumn(column, matchingSegments(t-1))) > 0 then
                 (let ((nextmatseg (if learn                                    ;; 50.   if LEARNING_ENABLED
                                     (punish-predicted-column tm column matsegs);; 9.      punishPredictedColumn(column)
                                     (skip-col tm column matsegs))))
-                  (loop (if (null? actcols) actcols (cdr actcols))
-                        (skip-col tm column actsegs)
-                        nextmatseg actcells wincells))
-                (loop (if (null? actcols) actcols (cdr actcols))
-                      (skip-col tm column actsegs)
-                      matsegs actcells wincells)))
+                  (loop actcols actsegs nextmatseg actcells wincells))
+                (loop actcols (skip-col tm column actsegs) matsegs actcells wincells)))
         ;; all active cols and segs handled: set prev active/winner cells for next iteration
         (begin
           (tm-active-cells-set! tm actcells)
@@ -332,8 +329,9 @@
     (if (fx=? (segs->colx tm segments) column)                                 ;; 11. for segment in segmentsForColumn(column, activeSegments(t-1))
         (let ((segment (car segments)))
           (when learn                                                          ;; 15. if LEARNING_ENABLED
-            (adapt-segment tm (car segments) (tm-active-cells tm)
-                (tm-permanence-increment tm) (tm-permanence-decrement tm))
+            (adapt-segment tm segment (tm-active-cells tm)
+                (lambda (p) (fx+ p (tm-permanence-increment tm)))
+                (tm-permanence-decrement tm))
             (let ((n-grow-desired                                              ;; 22. newSynapseCount = (SYNAPSE_SAMPLE_SIZE -
                     (fx- (tm-max-new-synapse-count tm)
                          (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 23.                    numActivePotentialSynapses(t-1, segment))
@@ -352,7 +350,7 @@
         (values segments actcells wincells))))
                                                                                             ;
 (define (adapt-segment tm                ;; TM {Seg} (listof CellX) Permanence Permanence ->
-          segment prev-active-cells permanence-increment permanence-decrement)
+          segment prev-active-cells increment-proc permanence-decrement)
   ;; update synapses on segment: + if pre cell active, - otherwise, destroy if 0
   (let ((synapses (seg-synapses segment)))
     (let loop ((sx (fx- (synapses-length synapses) 1)) (synapses-to-destroy '())) ;; 16. for synapse in segment.synapses
@@ -367,7 +365,7 @@
           (let* ( (synapse (synapses-ref synapses sx))
                   (permanence
                     (if (memv (prex synapse) prev-active-cells)                ;; 17. if synapse.presynapticCell in activeCells(t-1) then
-                      (clip-p (fx+ (perm synapse) permanence-increment))       ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
+                      (clip-p (increment-proc (perm synapse)))                 ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
                       (clip-p (fx- (perm synapse) permanence-decrement)))))    ;; 20. else synapse.permanence -= PERMANENCE_DECREMENT
             (if (zero? permanence)
                 (loop (fx- sx 1) (cons sx synapses-to-destroy))  ;; build s-t-d sorted
@@ -387,7 +385,8 @@
                       (best-matching-segment tm column column-matching-segments)])
           (when learn                                                          ;; 39. if LEARNING_ENABLED
             (adapt-segment tm (car best-matching-segment) (tm-active-cells tm) ;; 40-44. [use adapt-segment to adjust permanences]
-                (tm-permanence-increment tm) (tm-permanence-decrement tm))
+                (lambda (p) (fx+ p (tm-permanence-increment tm)))
+                (tm-permanence-decrement tm))
             (let ((n-grow-desired
                     (fx- (tm-max-new-synapse-count tm)                         ;; 46. newSynapseCount = (SAMPLE_SIZE -
                          (hashtable-ref (tm-num-active-pot-syns-for-seg tm)    ;; 47.   numActivePotentialSynapses(t-1, learningSegment))
@@ -416,8 +415,8 @@
     (if (fx=? column (segs->colx tm segs))
       (begin
         (when (fxpositive? (tm-predicted-segment-decrement tm))                ;; 52-54. [use adapt-segment to decrement permanences]
-          (adapt-segment tm (car segs) (tm-active-cells tm) 
-                         (- (tm-predicted-segment-decrement tm)) 0))
+          (adapt-segment tm (car segs) (tm-active-cells tm)
+              (lambda (p) (fx- p (tm-predicted-segment-decrement tm))) 0))
         (loop (cdr segs)))
       segs)))
                                                                                             ;
