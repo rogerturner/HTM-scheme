@@ -92,13 +92,13 @@
 (define (tm-high-order)
   (let* ( (tm (temporal-memory '(2048) 8
                 `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.3)]
-                `[min-threshold               . 15]
-                `[max-new-synapse-count       . 40]
+                `[connected-permanence        . ,(tm-perm 0.5)]
+                `[min-threshold               . 10]
+                `[max-new-synapse-count       . 20]
                 `[permanence-increment        . ,(tm-perm 0.1)]
                 `[permanence-decrement        . ,(tm-perm 0.1)]
-                `[activation-threshold        . 15]
-                `[predicted-segment-decrement . ,(tm-perm 0.01)]))
+                `[activation-threshold        . 13]
+                `[predicted-segment-decrement . ,(tm-perm 0.03)]))
           (sparsity 0.02)
           (sparse-cols (exact (truncate (* 2048 sparsity))))
           (bits (lambda (b) 
