@@ -35,26 +35,16 @@
     tm-get-predictive-cols)
     
   (import 
-    (rnrs)                    ;; use (except (chezscheme) add1 make-list random) for Chez load-program
+    (except (chezscheme) add1 make-list random)
     (libraries htm-prelude))
-    
-  #| comment out for Chez Scheme (optional) |#
-  (define fxvector        vector)
-  (define make-fxvector   make-vector)
-  (define fxvector-ref    vector-ref)
-  (define fxvector-set!   vector-set!)
-  (define fxvector-length vector-length)
-  (define list->fxvector  list->vector)
-  (define fxvector->list  vector->list)
-  #| |#
-          
-  (define synapses:       fxvector)
-  (define make-synapses   make-fxvector)
-  (define synapses-ref    fxvector-ref)
-  (define synapses-set!   fxvector-set!)
-  (define synapses-length fxvector-length)
-  (define list->synapses  list->fxvector)
-  (define synapses->list  fxvector->list)
+
+  (define synapses:       vector)
+  (define make-synapses   make-vector)
+  (define synapses-ref    vector-ref)
+  (define synapses-set!   vector-set!)
+  (define synapses-length vector-length)
+  (define list->synapses  list->vector)
+  (define synapses->list  vector->list)
 
 ;; === Temporal Memory Types ===
                                                                                             ;
@@ -404,8 +394,11 @@
 
         (let ((winner-cell (least-used-cell tm cells-for-column)))             ;; 33. else winnerCell = leastUsedCell(column)
           (when learn                                                          ;; 34.   if LEARNING_ENABLED
-            (let ((n-grow-exact (fxmin (tm-max-new-synapse-count tm)
-                                       (length (tm-winner-cells tm)))))
+            (let ((n-grow-exact 
+                    (fxmin (fxmax (fx+ (tm-activation-threshold tm)     ;; was: (tm-max-new-synapse-count tm)
+                                       (tm-min-threshold tm))
+                                  (fxdiv (tm-max-new-synapse-count tm) 2))
+                           (length (tm-winner-cells tm)))))
               (when (fxpositive? n-grow-exact)
                 (let ((lseg (create-segment tm winner-cell)))                  ;; 35.   learningSegment = growNewSegment(winnerCell)
                   (grow-synapses tm lseg n-grow-exact (tm-winner-cells tm))))));; 48. growSynapses(learningSegment, newSynapseCount)
@@ -427,7 +420,7 @@
                                                                                             ;
 ;; --- Activate a set of dendrite segments. ---
                                                                                             ;
-(define (compute-activity tm             ;; TM (listof CellX) -> (hash Flatx -> Nat) (hash Flatx -> Nat)
+(define (compute-activity tm             ;; TM (listof CellX) -> (bytevectorof Nat) (bytevectorof Nat)
           active-presynaptic-cells)
   ;; produce counts of segments with potential/connected synapses for active cells
   (let ((napsfs (make-bytevector (tm-next-flatx tm) 0))  ;; "num-active-potential-synapses-for-segment"
@@ -439,7 +432,7 @@
           (lambda (flatx)
             (let* ((synapses (seg-synapses (vector-ref (tm-seg-register tm) flatx)))
                    (n-synapses (synapses-length synapses)))
-              (do ((sx 0 (add1 sx))) ((fx=? sx n-synapses))                    ;; 58. for synapse in segment.synapses
+              (do ((sx (fx- n-synapses 1) (fx- sx 1))) ((fxnegative? sx))      ;; 58. for synapse in segment.synapses
                 (let ((synapse (synapses-ref synapses sx)))
                   (when (fx=? cellx (prex synapse))                            ;; 63. if synapse.permanence ≥ 0 then
                     (bytevector-u8-set! napsfs flatx 
@@ -462,11 +455,11 @@
                                           [(fx=? (seg-cellx sega) (seg-cellx segb))
                                               (fx<? (seg-flatx sega) (seg-flatx segb))]
                                           [else #f]))
-                        (do ((i 0 (add1 i)) 
+                        (do ((i (fx- (bytevector-length counts) 1) (fx- i 1)) 
                              (segs '() (if (fx>=? (bytevector-u8-ref counts i) threshold)
                                          (cons (vector-ref segments i) segs)
                                          segs)))
-                            ((fx=? i (bytevector-length counts)) segs))))))
+                            ((fxnegative? i ) segs))))))
       (tm-active-segments-set!   tm                                            ;; 67. activeSegments(t).add(segment)
           (sorted num-active-connected (tm-activation-threshold tm)))          ;; 66. if numActiveConnected ≥ ACTIVATION_THRESHOLD then
       (tm-matching-segments-set! tm                                            ;; 70. matchingSegments(t).add(segment)
