@@ -1,5 +1,4 @@
 #!r6rs                     ;; for Chez Scheme
-;;#lang racket             ;; for Racket
 
 ;; ====== HTM-scheme TM-High-Order example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -25,11 +24,6 @@
         (libraries htm-prelude)
         (libraries lib-tm))
 
-#;(require                 ;; for Racket
-  rnrs
-  (file "../src/libraries/htm-prelude.ss")
-  (file "../src/libraries/lib-tm.ss"))
-
 (define (bitwise->list vec)              ;; InputVec -> (listof Nat)
   ;; produce indices of set bits in vec
   (let loop ((vec vec) (result '()))
@@ -44,8 +38,8 @@
 (define (accuracy current predicted)     ;; (listof ColX) (listof ColX) -> Number
   (let ((num-predicted-cols (length predicted))
         (num-common-cols (bitwise-bit-count (bitwise-and
-                            (list->bitwise current)
-                            (list->bitwise predicted)))))
+                                             (list->bitwise current)
+                                             (list->bitwise predicted)))))
     (inexact (if (positive? num-predicted-cols)
                 (/ num-common-cols num-predicted-cols)
                 0))))
@@ -61,11 +55,11 @@
     (tm-reset tm)
     (tm-compute tm (bitwise->list (vector-ref sequence k)) #f)
     (for-each display `(
-      "--- " ,(string-ref "ABCDXY" k) " ---" #\newline))
+                        "--- " ,(string-ref "ABCDXY" k) " ---" #\newline))
     (for-each display `(
-      "   Active cols: " ,(cols->string (tm-get-active-cols tm)) #\newline))
+                        "   Active cols: " ,(cols->string (tm-get-active-cols tm)) #\newline))
     (for-each display `(
-      "Predicted cols: " ,(cols->string (tm-get-predictive-cols tm)) #\newline))))
+                        "Predicted cols: " ,(cols->string (tm-get-predictive-cols tm)) #\newline))))
     
 (define (train tm sequence time-steps noise-level)
   (let ((accuracies '())
@@ -144,19 +138,19 @@
     (display "\nPart 4: mixed ABCD XBCY\n")
     (let ((tm (temporal-memory '(2048) 8
                 `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.3)]
-                `[min-threshold               . 15]
-                `[max-new-synapse-count       . 40]
+                `[connected-permanence        . ,(tm-perm 0.5)]
+                `[min-threshold               . 10]
+                `[max-new-synapse-count       . 20]
                 `[permanence-increment        . ,(tm-perm 0.1)]
                 `[permanence-decrement        . ,(tm-perm 0.1)]
-                `[activation-threshold        . 15]
-                `[predicted-segment-decrement . ,(tm-perm 0.01)])))
+                `[activation-threshold        . 13]
+                `[predicted-segment-decrement . ,(tm-perm 0.03)])))
       (do ((t 0 (add1 t))) ((= t 75))
         (let ((rnd (random 2)))
           (do ((k 0 (add1 k))) ((= k 4))
             (if (zero? rnd)
               (tm-compute tm (bitwise->list (vector-ref seq1 k)) #t)
               (tm-compute tm (bitwise->list (vector-ref seq2 k)) #t)))))
-      (show-predictions tm seqT))
+      (show-predictions tm seqT))))
   
-    ))
+    
