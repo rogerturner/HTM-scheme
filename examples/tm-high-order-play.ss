@@ -1,28 +1,9 @@
-#!r6rs                     ;; for Chez Scheme
 
-;; ====== HTM-scheme TM-High-Order example Copyright 2017 Roger Turner. ======
-  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  ;; Based on tm_high_order.py which is part of the Numenta Platform for   ;;
-  ;; Intelligent Computing (NuPIC) Copyright (C) 2013-2016, Numenta, Inc.  ;;
-  ;;                                                                       ;;
-  ;; This program is free software: you can redistribute it and/or modify  ;;
-  ;; it under the terms of the GNU Affero Public License version 3 as      ;;
-  ;; published by the Free Software Foundation.                            ;;
-  ;;                                                                       ;;
-  ;; This program is distributed in the hope that it will be useful,       ;;
-  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of        ;;
-  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                  ;;
-  ;; See the GNU Affero Public License for more details.                   ;;
-  ;;                                                                       ;;
-  ;; You should have received a copy of the GNU Affero Public License      ;;
-  ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
-  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(library-directories "../src/")
 
-  ;; Translated from NuPIC tm_high_order.py, see comments there for more info.
-
-(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+(import (except (chezscheme) add1 make-list random)
         (libraries htm-prelude)
-        (libraries lib-tm))
+        (libraries lib-tm-play))
 
 (define (bitwise->list vec)              ;; InputVec -> (listof Nat)
   ;; produce indices of set bits in vec
@@ -84,16 +65,7 @@
     (newline)))
     
 (define (tm-high-order)
-  (let* ( (tm (temporal-memory '(2048) 8
-                `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.5)]
-                `[min-threshold               . 10]
-                `[max-new-synapse-count       . 20]
-                `[permanence-increment        . ,(tm-perm 0.1)]
-                `[permanence-decrement        . ,(tm-perm 0.1)]
-                `[activation-threshold        . 13]
-                `[predicted-segment-decrement . ,(tm-perm 0.03)]))
-          (sparsity 0.02)
+  (let* ( (sparsity 0.02)
           (sparse-cols (exact (truncate (* 2048 sparsity))))
           (bits (lambda (b) 
                   (bitwise-copy-bit-field 0 (* b sparse-cols) (* (add1 b) sparse-cols) -1)))
@@ -106,36 +78,8 @@
           (seq1 (vector sdr-A sdr-B sdr-C sdr-D))
           (seq2 (vector sdr-X sdr-B sdr-C sdr-Y))
           (seqT (vector sdr-A sdr-B sdr-C sdr-D sdr-X sdr-Y)))
-    
-    (display "\nPart 1: A->B->C->D\n")
-    (train tm seq1 10 0.0)
-    (show-predictions tm seqT)
-
-    (display "\nPart 2: X->B->C->Y\n")
-    (train tm seq2 10 0.0)
-    (show-predictions tm seqT)
-    
-    (display "\nPart 3: X->B->C->Y with 30% noise\n")
-    (train tm seq2 50 0.3)
-    (show-predictions tm seqT)
-
-    (display "\nPart 3 fig 4: X->B->C->Y with 50% noise\n")
-    (train tm seq2 50 0.5)
-    (show-predictions tm seqT)
-    
-    (display "\nPart 3 fig 5: X->B->C->Y, no noise\n")
-    (train tm seq2 10 0.0)
-    (show-predictions tm seqT)
-    
-    (display "\nPart 3 fig 6: X->B->C->Y with 90% noise\n")
-    (train tm seq2 50 0.9)
-    (show-predictions tm seqT)
-    
-    (display "\nPart 3 fig 7: X->B->C->Y, no noise\n")
-    (train tm seq2 25 0.0)
-    (show-predictions tm seqT)
-  
-    (display "\nPart 4: mixed ABCD XBCY\n")
+      
+    (display "\nmixed ABCD XBCY\n")
     (let ((tm (temporal-memory '(2048) 8
                 `[initial-permanence          . ,(tm-perm 0.21)]
                 `[connected-permanence        . ,(tm-perm 0.5)]
@@ -152,5 +96,3 @@
               (tm-compute tm (bitwise->list (vector-ref seq1 k)) #t)
               (tm-compute tm (bitwise->list (vector-ref seq2 k)) #t)))))
       (show-predictions tm seqT))))
-  
-    
