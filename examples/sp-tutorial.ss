@@ -91,5 +91,5 @@
         (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
                          (list->bitwise (compute sp 
                            (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
-
+                                                                                            ;
 #;(time (sp-tutorial))                 ;; uncomment to run on Chez load-program

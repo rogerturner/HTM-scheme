@@ -36,7 +36,7 @@
     )
     
   (import 
-    (except (chezscheme) add1 make-list random)
+    (rnrs)                   ;; use (except (chezscheme) add1 make-list random) for load-program
     (libraries htm-prelude))
 
   (define synapses:       vector)
@@ -427,7 +427,7 @@
                 (begin
                   (vector-fill! napsfs 0)
                   napsfs)
-                (make-vector (fx+ (tm-next-flatx tm) (tm-num-columns tm) 0)))))
+                (make-vector (fx+ (tm-next-flatx tm) (tm-num-columns tm)) 0))))
         (nacsfs (make-vector (tm-next-flatx tm) 0))  ;; "num-active-connected-synapses-for-segment"
         (threshold (tm-connected-permanence tm))
         (segments  (tm-seg-index tm))

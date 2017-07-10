@@ -68,3 +68,4 @@
       (let ((pred-col-state (build-vector 50 (lambda (cx)
                                 (if (member cx (tm-get-predictive-cols tm)) 1 0)))))
         (for-each display `("Predicted columns:" ,(format-row pred-col-state) #\newline))))))
+                                                                                            ;

@@ -1,4 +1,4 @@
-#!r6rs                     ;; for Chez Scheme
+#!r6rs
 
 ;; ====== HTM-scheme TM-High-Order example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -22,7 +22,7 @@
 
 (library-directories "../src/")
 
-(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
         (libraries htm-prelude)
         (libraries lib-tm))
 
@@ -33,10 +33,10 @@
       (let ((b (bitwise-first-bit-set vec)))
         (loop (bitwise-copy-bit vec b 0) (cons b result)))
       result)))
-
+                                                                                            ;
 (define (cols->string cols)              ;; (listof ColX) -> String [of hex chars]
   (list->string (reverse (string->list (number->string (list->bitwise cols) 16)))))
-
+                                                                                            ;
 (define (accuracy current predicted)     ;; (listof ColX) (listof ColX) -> Number
   (let ((num-predicted-cols (length predicted))
         (num-common-cols (bitwise-bit-count (bitwise-and
@@ -45,7 +45,7 @@
     (inexact (if (positive? num-predicted-cols)
                 (/ num-common-cols num-predicted-cols)
                 0))))
-              
+                                                                                            ;
 (define (corrupt-vector v1 noise-level num-active-cols) ;; InputVec Number ColX -> InputVec
   (let* ( (bit-xs (vector-sample (build-vector 2048 id) 
                                  (int<- (* noise-level num-active-cols))))
@@ -62,7 +62,7 @@
                         "   Active cols: " ,(cols->string (tm-get-active-cols tm)) #\newline))
     (for-each display `(
                         "Predicted cols: " ,(cols->string (tm-get-predictive-cols tm)) #\newline))))
-    
+                                                                                            ;
 (define (train tm sequence time-steps noise-level)
   (let ((accuracies '())
         (prev-average 0))
@@ -84,7 +84,7 @@
                 (display " ")
                 (set! prev-average average))))))
     (newline)))
-    
+                                                                                            ;
 (define (tm-high-order)
   (let* ( (tm (temporal-memory '(2048) 8
                 `[initial-permanence          . ,(tm-perm 0.21)]
@@ -154,5 +154,5 @@
               (tm-compute tm (bitwise->list (vector-ref seq1 k)) #t)
               (tm-compute tm (bitwise->list (vector-ref seq2 k)) #t)))))
       (show-predictions tm seqT))))
-  
+                                                                                            ;
     
