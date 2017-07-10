@@ -1,5 +1,5 @@
-#!r6rs                     ;; for Chez Scheme
-;;#lang racket             ;; for Racket
+#!r6rs
+
 ;; ========= HTM-scheme Hello-SP example Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on hello_sp.py which is part of the Numenta Platform for        ;;
@@ -20,14 +20,11 @@
 
   ;; Translated from NuPIC hello_sp.py, see comments there for more info.
 
-(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+(library-directories "../src/")
+
+(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
         (libraries htm-prelude)
         (libraries lib-sp))
-
-#;(require                 ;; for Racket
-  rnrs
-  (file "../src/libraries/htm-prelude.ss")
-  (file "../src/libraries/lib-sp.ss"))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))

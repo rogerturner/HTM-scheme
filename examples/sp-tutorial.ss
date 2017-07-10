@@ -1,5 +1,5 @@
-#!r6rs                     ;; for Chez Scheme
-;;#lang racket             ;; for Racket
+#!r6rs
+
 ;; ====== HTM-scheme SP-Tutorial example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on sp_tutorial.py which is part of the Numenta Platform for     ;;
@@ -20,14 +20,11 @@
 
   ;; Translated from NuPIC sp_tutorial.py, see comments there for more info.
 
-(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+(library-directories "../src/")
+
+(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
         (libraries htm-prelude)
         (libraries lib-sp))
-
-#;(require                 ;; for Racket
-  rnrs
-  (file "../src/libraries/htm-prelude.ss")
-  (file "../src/libraries/lib-sp.ss"))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))

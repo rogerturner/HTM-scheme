@@ -1,5 +1,4 @@
-#!r6rs                     ;; for Chez Scheme
-;;#lang racket             ;; for Racket
+#!r6rs
 
 ;; ========= HTM-scheme Hello-TM example Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -21,14 +20,11 @@
 
   ;; Translated from NuPIC hello_tm.py, see comments there for more info.
 
-(import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
+(library-directories "../src/")
+
+(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
         (libraries htm-prelude)
         (libraries lib-tm))
-
-#;(require                 ;; for Racket
-  rnrs
-  (file "../src/libraries/htm-prelude.ss")
-  (file "../src/libraries/lib-tm.ss"))
 
 (define (hello-tm)
   (display "See nupic/examples/sp/hello_tm.py") (newline)

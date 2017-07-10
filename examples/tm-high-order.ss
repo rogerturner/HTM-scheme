@@ -20,6 +20,8 @@
 
   ;; Translated from NuPIC tm_high_order.py, see comments there for more info.
 
+(library-directories "../src/")
+
 (import (rnrs)             ;; for Chez; use (except (chezscheme) add1 make-list random) for load-program
         (libraries htm-prelude)
         (libraries lib-tm))
