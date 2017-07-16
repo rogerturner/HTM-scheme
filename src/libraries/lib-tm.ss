@@ -533,20 +533,12 @@
                       [(fx=? (seg-cellx sega) (seg-cellx segb))
                           (fx<? (seg-flatx sega) (seg-flatx segb))]
                       [else #f]))
-    (let* ( (segments (tm-seg-index tm))
-            (candidates 
-              (do ((i (fx- (tm-next-flatx tm) 1) (fx- i 1)) 
-                   (segs '() (if (fx>=? (vector-ref counts i) threshold)
-                               (cons (vector-ref segments i) segs)
-                               segs)))
-                  ((fxnegative? i ) segs)))
-            (quarter (fxmax 5 (fxdiv (length candidates) 4))))
-      ;; drop some lower-scoring segments (*not in NuPIC*)
-      (take (fx+ quarter (random (fx* 2 quarter)))
-        (list-sort (lambda (sega segb)
-                      (fx>? (vector-ref counts (seg-flatx sega))
-                            (vector-ref counts (seg-flatx segb))))
-                   candidates)))))
+    (let ((segments (tm-seg-index tm)))
+      (do ((i (fx- (tm-next-flatx tm) 1) (fx- i 1)) 
+          (segs '() (if (fx>=? (vector-ref counts i) threshold)
+                       (cons (vector-ref segments i) segs)
+                       segs)))
+          ((fxnegative? i) segs)))))
                                                                                             ;
 (define (skip-col tm column segments)    ;; TM ColX (listof Segment) -> (listof Segment)
   ;; step to next column's segments
