@@ -1,9 +1,9 @@
-#!r6rs
+#!chezscheme (optimize-level 3)
 
 ;; ========= HTM-scheme Spatial Pooler Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  ;; Based on spatial_pooler.py which is part of the Numenta Platform for  ;;
-  ;; Intelligent Computing (NuPIC) Copyright (C) 2013-2016, Numenta, Inc.  ;;
+  ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
+  ;; which is Copyright (C) 2014-2016, Numenta, Inc.                       ;;
   ;;                                                                       ;;
   ;; This program is free software: you can redistribute it and/or modify  ;;
   ;; it under the terms of the GNU Affero Public License version 3 as      ;;
@@ -21,9 +21,9 @@
   ;; Translated from NuPIC spatial_pooler.py, see comments there for more info.
   ;; Plain Scheme using non-sparse vectors but packing values into Fixnums.
   ;; Max 2 dimensions, no wraparound, no parameter consistency checking.
-  ;; Use a "Fold All" view (in eg Atom) for a source overview.
+  ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-(library (libraries lib-sp)
+(library (libraries htm-sp)
 
   (export
     perm<-
