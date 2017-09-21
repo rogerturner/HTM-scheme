@@ -1,5 +1,3 @@
-#!r6rs
-
 ;; ============ HTM-scheme Prelude Copyright 2017 Roger Turner. ============
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; This program is free software: you can redistribute it and/or modify  ;;
@@ -15,6 +13,10 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+#!chezscheme 
+
+(optimize-level 3)
+
 (library (libraries htm-prelude)
 
   (export
@@ -23,7 +25,6 @@
     build-list
     take
     list-average
-    list->bitwise
     int<-
     id
     build-vector 
@@ -41,11 +42,15 @@
     vector-count
     vector-indices
     vector-refs
+    list->bitwise
     vector->bitwise
     bitwise-span
-    random 
+    bitwise->list
+    random
+    random-seed!
     vector-sample
-    key-word-args)
+    key-word-args
+    define-memoized)
     
   (import (rnrs))
 
@@ -55,6 +60,7 @@
 ;; X Y -> Z     = function with argument types X, Y and result type Z
 ;; Nat          = natural number (including zero) (Scheme Fixnum or exact Integer)
 ;; Fix10k       = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
+;; Bits         = Integer (Bignum) interpreted bitwise
 
 (define (add1 n)                         ;; Fixnum -> Fixnum
   (fx+ 1 n))
@@ -65,23 +71,19 @@
                                                                                             ;
 (define (build-list n proc)              ;; Nat (Nat -> X) -> (listof X)
   ;; produce list of n X's by applying proc to 0..n-1
-  (let loop [ (i 0) (xs '())]
+  (let loop [ (i 0) (xs (list))]
     (cond [(fx=? i n) (reverse xs)]
           [else (loop (add1 i) (cons (proc i) xs))])))
                                                                                             ;
 (define (take n xs)                      ;; Nat (listof X) -> (listof X)
   ;; produce first n elements of xs
-  (let loop [ (n n) (xs xs) (ys '())]
+  (let loop [ (n n) (xs xs) (ys (list))]
     (cond [(or (fxzero? n) (null? xs)) (reverse ys)]
           [else (loop (fx- n 1) (cdr xs) (cons (car xs) ys))])))
                                                                                             ;
 (define (list-average l)                 ;; (listof Number) -> Number
   ;; produce mean of non-empty list
   (/ (apply + l) (length l)))
-                                                                                            ;
-(define (list->bitwise ns)               ;; (listof Nat) -> Number
-  ;; produce bitwise value by setting bits indexed by elements of ns
-  (fold-left (lambda (acc n) (bitwise-copy-bit acc n 1)) 0 ns))
                                                                                             ;
 (define (int<- x)                        ;; Number -> Integer
   (exact (round x)))
@@ -156,7 +158,7 @@
 (define (vector-indices vec)             ;; (vectorof X) -> (listof Nat)
   ;; produce list of indices for which vector element is not false
   (do [ (i 0 (add1 i)) 
-        (l '() (if (vector-ref vec i) (cons i l) l))]
+        (l (list) (if (vector-ref vec i) (cons i l) l))]
       ((fx=? i (vector-length vec)) l)))
                                                                                             ;
 (define (vector-refs vec refs)           ;; (vectorof X) (vectorof Nat) -> (vectorof X)
@@ -165,21 +167,37 @@
     (do ((i 0 (add1 i))) ((fx=? i (vector-length refs)) vrefs)
       (vector-set! vrefs i (vector-ref vec (vector-ref refs i))))))
                                                                                             ;
-(define (vector->bitwise vec)            ;; (vectorof Nat) -> Number
+(define (list->bitwise ns)               ;; (listof Nat) -> Bits
+  ;; produce bitwise value by setting bits indexed by elements of ns
+  (fold-left (lambda (acc n) (bitwise-copy-bit acc n 1)) 0 ns))
+                                                                                            ;
+(define (vector->bitwise vec)            ;; (vectorof Nat) -> Bits
   (list->bitwise (vector->list vec)))
                                                                                             ;
-(define (bitwise-span n)                 ;; Number -> Nat
-  ;; produce span of 1 bits in n
-  (fx- (bitwise-length n) (bitwise-first-bit-set n)))
+(define (bitwise-span bits)              ;; Bits -> Nat
+  ;; produce span of 1 bits in bits
+  (fx- (bitwise-length bits) (bitwise-first-bit-set bits)))
+                                                                                            ;
+(define (bitwise->list bits)             ;; Bits -> (listof Nat)
+  ;; produce indices of set bits in bits
+  (let loop ((bits bits) (result (list)))
+    (if (positive? bits)
+      (let ((b (bitwise-first-bit-set bits)))
+        (loop (bitwise-copy-bit bits b 0) (cons b result)))
+      result)))
                                                                                             ;
 (define (random n)                       ;; Nat -> Nat
   ;; produce random integer in range 0..n-1
+  ;; alternative?: (set! *random-state* (mod (+ 1013904223 (* *random-state* 1664525)) 4294967296))
   (let ((Lehmer-modulus   2147483647)
         (Lehmer-multiplier     48271))
     (set! *random-state* (mod (* *random-state* Lehmer-multiplier) Lehmer-modulus))
     (mod *random-state* n)))
     
   (define *random-state* 48271)
+  
+(define (random-seed! n)                 ;; Nat ->
+  (set! *random-state* n))
                                                                                             ;
 (define (vector-sample source size)      ;; (vectorof X) Nat -> (vectorof X)
   ;; produce random selection of length size from source (using Durstenfeld shuffle)
@@ -198,13 +216,20 @@
                                                                                             ;
 (define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
   ;; KWarg is [key . value]; produce list of default values overridden by arg values
-  (for-each (lambda (arg-kv)
-              (unless (assq (car arg-kv) defaults)
-                (error #f "unknown keyword arg" arg-kv)))
-            args)
   (map (lambda (default-kv)
          (let ((kv (assq (car default-kv) args)))  ;; if this default in args
            (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
        defaults))
+                                                                                            ;
+(define-syntax define-memoized           ;; Function-defn -> defn with arg/result cache
+  (syntax-rules ()
+    ((define-memoized (f arg ...) body ...)
+      (define f
+        (let ((cache (list)))
+          (lambda (arg ...)
+            (cond ((assoc `(,arg ...) cache) => cdr)
+                  (else (let ((val (begin body ...)))
+                          (set! cache (cons (cons `(,arg ...) val) cache))
+                          val)))))))))
 
 )
