@@ -1,5 +1,3 @@
-#!r6rs
-
 ;; ====== HTM-scheme TM-High-Order example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on tm_high_order.py which is part of the Numenta Platform for   ;;
@@ -22,18 +20,10 @@
 
 (library-directories "../src/")
 
-(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
+(import (rnrs)
         (libraries htm-prelude)
-        (libraries lib-tm))
+        (libraries htm-tm))
 
-(define (bitwise->list vec)              ;; InputVec -> (listof Nat)
-  ;; produce indices of set bits in vec
-  (let loop ((vec vec) (result '()))
-    (if (positive? vec)
-      (let ((b (bitwise-first-bit-set vec)))
-        (loop (bitwise-copy-bit vec b 0) (cons b result)))
-      result)))
-                                                                                            ;
 (define (cols->string cols)              ;; (listof ColX) -> String [of hex chars]
   (list->string (reverse (string->list (number->string (list->bitwise cols) 16)))))
                                                                                             ;
@@ -54,28 +44,28 @@
                                                                                             ;
 (define (show-predictions tm sequence)
   (do ((k 0 (add1 k))) ((= k 6))
-    (tm-reset tm)
-    (tm-compute tm (bitwise->list (vector-ref sequence k)) #f)
+    (tm:reset tm)
+    (tm:compute tm (bitwise->list (vector-ref sequence k)) #f)
     (for-each display `(
                         "--- " ,(string-ref "ABCDXY" k) " ---" #\newline))
     (for-each display `(
-                        "   Active cols: " ,(cols->string (tm-get-active-cols tm)) #\newline))
+                        "   Active cols: " ,(cols->string (tm:get-active-cols tm)) #\newline))
     (for-each display `(
-                        "Predicted cols: " ,(cols->string (tm-get-predictive-cols tm)) #\newline))))
+                        "Predicted cols: " ,(cols->string (tm:get-predictive-cols tm)) #\newline))))
                                                                                             ;
 (define (train tm sequence time-steps noise-level)
   (let ((accuracies '())
         (prev-average 0))
     (display "Average accuracy: ")
     (do ((t 0 (add1 t))) ((= t time-steps))
-      (tm-reset tm)
+      (tm:reset tm)
       (let ((predicted-cols '()))
         (do ((k 0 (add1 k))) ((= k 4))
           (let ((v (corrupt-vector (vector-ref sequence k) noise-level (exact (truncate (* 2048 0.02))))))
-            (tm-compute tm (bitwise->list v) #t))
+            (tm:compute tm (bitwise->list v) #t))
           (if (positive? k)
-            (set! accuracies (cons (accuracy (tm-get-active-cols tm) predicted-cols) accuracies)))
-          (set! predicted-cols (tm-get-predictive-cols tm)))
+            (set! accuracies (cons (accuracy (tm:get-active-cols tm) predicted-cols) accuracies)))
+          (set! predicted-cols (tm:get-predictive-cols tm)))
         (let ((average (/ (round (* 100 (list-average accuracies))) 100)))
           (if (= average prev-average)
               (display ".")
@@ -86,15 +76,16 @@
     (newline)))
                                                                                             ;
 (define (tm-high-order)
-  (let* ( (tm (temporal-memory '(2048) 8
-                `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.5)]
+  (display "See nupic/examples/tm/tm-high-order.py") (newline)
+  (let* ( (tm (tm:constructor '(2048) 8
+                `[initial-permanence          . ,(tm:permanence 0.21)]
+                `[connected-permanence        . ,(tm:permanence 0.5)]
                 `[min-threshold               . 10]
                 `[max-new-synapse-count       . 20]
-                `[permanence-increment        . ,(tm-perm 0.1)]
-                `[permanence-decrement        . ,(tm-perm 0.1)]
+                `[permanence-increment        . ,(tm:permanence 0.1)]
+                `[permanence-decrement        . ,(tm:permanence 0.1)]
                 `[activation-threshold        . 13]
-                `[predicted-segment-decrement . ,(tm-perm 0.03)]))
+                `[predicted-segment-decrement . ,(tm:permanence 0.004)]))
           (sparsity 0.02)
           (sparse-cols (exact (truncate (* 2048 sparsity))))
           (bits (lambda (b) 
@@ -138,21 +129,20 @@
     (show-predictions tm seqT)
   
     (display "\nPart 4: mixed ABCD XBCY\n")
-    (let ((tm (temporal-memory '(2048) 8
-                `[initial-permanence          . ,(tm-perm 0.21)]
-                `[connected-permanence        . ,(tm-perm 0.5)]
+    (let ((tm (tm:constructor '(2048) 8
+                `[initial-permanence          . ,(tm:permanence 0.21)]
+                `[connected-permanence        . ,(tm:permanence 0.5)]
                 `[min-threshold               . 10]
                 `[max-new-synapse-count       . 20]
-                `[permanence-increment        . ,(tm-perm 0.1)]
-                `[permanence-decrement        . ,(tm-perm 0.1)]
+                `[permanence-increment        . ,(tm:permanence 0.1)]
+                `[permanence-decrement        . ,(tm:permanence 0.1)]
                 `[activation-threshold        . 13]
-                `[predicted-segment-decrement . ,(tm-perm 0.03)])))
+                `[predicted-segment-decrement . ,(tm:permanence 0.004)])))
       (do ((t 0 (add1 t))) ((= t 75))
         (let ((rnd (random 2)))
           (do ((k 0 (add1 k))) ((= k 4))
             (if (zero? rnd)
-              (tm-compute tm (bitwise->list (vector-ref seq1 k)) #t)
-              (tm-compute tm (bitwise->list (vector-ref seq2 k)) #t)))))
+              (tm:compute tm (bitwise->list (vector-ref seq1 k)) #t)
+              (tm:compute tm (bitwise->list (vector-ref seq2 k)) #t)))))
       (show-predictions tm seqT))))
-                                                                                            ;
     

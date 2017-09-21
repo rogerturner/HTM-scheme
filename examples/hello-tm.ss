@@ -1,5 +1,3 @@
-#!r6rs
-
 ;; ========= HTM-scheme Hello-TM example Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on hello_tm.py which is part of the Numenta Platform for        ;;
@@ -22,24 +20,24 @@
 
 (library-directories "../src/")
 
-(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
+(import (rnrs)
         (libraries htm-prelude)
-        (libraries lib-tm))
+        (libraries htm-tm))
 
 (define (hello-tm)
-  (display "See nupic/examples/sp/hello_tm.py") (newline)
+  (display "See nupic/examples/tm/hello_tm.py") (newline)
   (let* ( (format-row (lambda (x) (vector-fold-left     ;; (vectorof Number) -> String
                                     (lambda (s xc) (string-append s  
                                         (if (zero? (mod (string-length s) 11)) " " "")
                                         (number->string xc)))
                                     "" (vector-take x 100))))
-          (tm (temporal-memory '(50) 2                          ;; Step 1: create Temporal Pooler instance with appropriate parameters
-                `[initial-permanence    . ,(tm-perm 0.5)]
-                `[connected-permanence  . ,(tm-perm 0.5)]
+          (tm (tm:constructor '(50) 2                           ;; Step 1: create Temporal Pooler instance with appropriate parameters
+                `[initial-permanence    . ,(tm:permanence 0.5)]
+                `[connected-permanence  . ,(tm:permanence 0.5)]
                 `[min-threshold         . 8]
                 `[max-new-synapse-count . 20]
-                `[permanence-increment  . ,(tm-perm 0.1)]
-                `[permanence-decrement  . ,(tm-perm 0.0)]
+                `[permanence-increment  . ,(tm:permanence 0.1)]
+                `[permanence-decrement  . ,(tm:permanence 0.0)]
                 `[activation-threshold  . 8]))
           (x (build-vector 5                                    ;; Step 2: create input vectors to feed to the temporal memory. Each input vector
                 (lambda (xx)                                    ;; must be numberOfCols wide. Here we create a simple sequence of 5 vectors
@@ -54,18 +52,17 @@
     (do ((i 0 (add1 i))) ((= i 10))                             ;; Step 3: send this simple sequence to the temporal memory for learning
       (do ((j 0 (add1 j))) ((= j 5))                            ;; We repeat the sequence 10 times
         (let ((active-columns (nzindices (vector-ref x j))))
-          (tm-compute tm active-columns #t)))
-      (tm-reset tm))
+          (tm:compute tm active-columns #t)))
+      (tm:reset tm))
     (do ((j 0 (add1 j))) ((= j 5))                              ;; Step 4: send the same sequence of vectors and look at predictions made by
       (for-each display `(                                      ;; temporal memory
         "--------" ,(string-ref "ABCDE" j) "--------" #\newline 
         "Raw input vector: " ,(format-row (vector-ref x j)) #\newline))
         (let ((active-columns (nzindices (vector-ref x j))))
-        (tm-compute tm active-columns #f))
+        (tm:compute tm active-columns #f))
       (let ((act-col-state (build-vector 50 (lambda (cx)
-                               (if (member cx (tm-get-active-cols tm)) 1 0)))))
+                               (if (member cx (tm:get-active-cols tm)) 1 0)))))
         (for-each display `("Active columns:   " ,(format-row act-col-state) #\newline)))
       (let ((pred-col-state (build-vector 50 (lambda (cx)
-                                (if (member cx (tm-get-predictive-cols tm)) 1 0)))))
+                                (if (member cx (tm:get-predictive-cols tm)) 1 0)))))
         (for-each display `("Predicted columns:" ,(format-row pred-col-state) #\newline))))))
-                                                                                            ;

@@ -1,5 +1,3 @@
-#!r6rs
-
 ;; ====== HTM-scheme SP-Tutorial example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on sp_tutorial.py which is part of the Numenta Platform for     ;;
@@ -22,9 +20,9 @@
 
 (library-directories "../src/")
 
-(import (rnrs)                  ;; use (except (chezscheme) add1 make-list random) for load-program
+(import (rnrs)
         (libraries htm-prelude)
-        (libraries lib-sp))
+        (libraries htm-sp))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))
@@ -91,5 +89,3 @@
         (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
                          (list->bitwise (compute sp 
                            (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
-                                                                                            ;
-#;(time (sp-tutorial))                 ;; uncomment to run on Chez load-program
