@@ -35,6 +35,7 @@
     tm-max-new-synapse-count
     tm-permanence-increment
     tm-permanence-decrement
+    tm-predicted-segment-decrement
     tm-next-flatx
     tm-active-cells
     tm-active-cells-set!
@@ -86,6 +87,7 @@
 
 ;; === Temporal Memory Types ===
                                                                                             ;
+;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
 ;; X, Y, Z      = type parameters (arbitrary types in function type specification etc)
 ;; X Y -> Z     = function with argument types X, Y and result type Z
 ;; {X}          = abbreviation for (listof X)
@@ -242,7 +244,8 @@
               (if (fx=? column matsegs-colx)                                   ;; 8.  else if count(segmentsForColumn(column, matchingSegments(t-1))) > 0 then
                   (let ((nextmatseg (if learn                                  ;; 50.   if LEARNING_ENABLED
                                       (punish-predicted-column                 ;; 9.      punishPredictedColumn(column)
-                                        tm column matsegs (tm-active-cells tm))
+                                        tm column matsegs (tm-active-cells tm)
+                                        (tm-predicted-segment-decrement tm))
                                       (skip-col tm column matsegs))))
                     (loop actcols actsegs nextmatseg actcells wincells))
                   (loop actcols (skip-col tm column actsegs) matsegs actcells wincells)))
@@ -252,7 +255,7 @@
             (vector-sort! < (tm-active-cells tm))
             (tm-winner-cells-set! tm wincells)))))))
                                                                                             ;
-(define (activate-dendrites tm learn)    ;; TM Bool ->
+(define (activate-dendrites tm learn)    ;; TM Boolean ->
   ;; Calculate dendrite segment activity, using the current active cells.
   (let-values ([(actsegs potsegs num-active-potential) 
                 (compute-activity tm (tm-active-cells tm) (tm-pre-index tm))]) ;; 66. if numActiveConnected ≥ ACTIVATION_THRESHOLD then
@@ -275,7 +278,7 @@
   (tm-active-segments-set!   tm '())
   (tm-matching-segments-set! tm '()))
                                                                                             ;
-(define (activate-predicted-column tm    ;; TM ColX {Segment} {CellX} {CellX} Bool -> {Segment} {CellX} {CellX}
+(define (activate-predicted-column tm    ;; TM ColX {Segment} {CellX} {CellX} Boolean -> {Segment} {CellX} {CellX}
           column active-segs actcells wincells learn)                          ;; 10. function activatePredictedColumn(column)
   ;; Determines which cells in a predicted column should be added to winner cells
   ;; list, and learns on the segments that correctly predicted this column.
@@ -297,7 +300,7 @@
         ;; else: end of segments for this column, return remaining segments and updated cell lists
         (values segments actcells wincells))))
                                                                                             ;
-(define (burst-column tm column          ;; TM ColX {Segment} {CellX} {CellX} Bool -> {Segment} {CellX} {CellX}
+(define (burst-column tm column          ;; TM ColX {Segment} {CellX} {CellX} Boolean -> {Segment} {CellX} {CellX}
           column-matching-segments actcells wincells learn)                    ;; 25. function burstColumn(column)
   ;; Activates all of the cells in an unpredicted active column, chooses a winner
   ;; cell, and, if learning is turned on, learns on one segment, growing a new
@@ -327,28 +330,28 @@
                   (cons winner-cell wincells))))))                             ;; 37. winnerCells(t).add(winnerCell)
                                                                                             ;
 (define (punish-predicted-column         ;; TM ColX {Segment} (vectorof CellX) -> {Segment}
-          tm column column-matching-segments prev-active-cells)                ;; 49. function punishPredictedColumn(column)
+          tm colx column-matching-segments prev-active-cells decrement)        ;; 49. function punishPredictedColumn(column)
   ;; Punishes the Segments that incorrectly predicted a column to be active.
-  (let loop ((segments column-matching-segments))                              ;; 51. for segment in segmentsForColumn(column, matchingSegments(t-1))
-    (if (fx=? column (segs->colx tm segments))
-      (let ((segment   (car segments))
-            (decrement (tm-predicted-segment-decrement tm)))
-        (when (fxpositive? decrement)                                          ;; 52-54. [use adapt-segment to decrement permanences]
-          (adapt-segment tm segment prev-active-cells (tm-cells tm)
-              ;; scale up predicted-segment-decrement on repeated misprediction
-              ;; within prediction-fail-boost iterations (*not in NuPIC*)
-              (lambda (p)
-                (let ((since-punished (fx- (tm-iteration tm) (seg-last-punished segment))))
-                  (clip-min (fx- p (if (fx<? since-punished (tm-prediction-fail-boost tm))
-                                       (fx* (fx- (add1 (tm-prediction-fail-boost tm))
-                                                 since-punished) 
-                                            decrement)
-                                       decrement)))))
-              0))
-        (seg-last-punished-set! segment (tm-iteration tm))
-        (loop (cdr segments)))
-      ;; else: end of segments for this column, return remaining segments
-      segments)))
+  (if (null? column-matching-segments) column-matching-segments
+    (let loop ((segments column-matching-segments))                            ;; 51. for segment in segmentsForColumn(column, matchingSegments(t-1))
+      (if (fx=? colx (segs->colx tm segments))
+        (let ((segment   (car segments)))
+          (when (fxpositive? decrement)                                        ;; 52-54. [use adapt-segment to decrement permanences]
+            (adapt-segment tm segment prev-active-cells (tm-cells tm)
+                ;; scale up predicted-segment-decrement on repeated misprediction
+                ;; within prediction-fail-boost iterations (*not in NuPIC*)
+                (lambda (p)
+                  (let ((since-punished (fx- (tm-iteration tm) (seg-last-punished segment))))
+                    (clip-min (fx- p (if (fx<? since-punished (tm-prediction-fail-boost tm))
+                                         (fx* (fx- (add1 (tm-prediction-fail-boost tm))
+                                                   since-punished) 
+                                              decrement)
+                                         decrement)))))
+                0))
+          (seg-last-punished-set! segment (tm-iteration tm))
+          (loop (cdr segments)))
+        ;; else: end of segments for this column, return remaining segments
+        segments))))
                                                                                             ;
 (define create-segment                   ;; TM CellX [(CellVecOf {Segment})] -> Seg
   (case-lambda 
@@ -644,7 +647,7 @@
     (do ((i 0 (add1 i))) ((fx=? i n) synapses)
       (synapses-set! synapses i (proc i)))))
                                                                                             ;
-(define (in-synapses? cellx synapses)    ;; CellX (vectorof Synapse) -> Bool
+(define (in-synapses? cellx synapses)    ;; CellX (vectorof Synapse) -> Boolean
   ;; produce whether cellx equals any pre-synaptic-cell index of synapses
   (let* ((syn-low  (+ (* cellx x10k) (least-fixnum)))
          (syn-high (fx+ syn-low x10k)))

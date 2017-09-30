@@ -55,7 +55,7 @@
   (import (rnrs))
 
 ;; -- Types --
-;; Bool, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
+;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
 ;; X, Y, Z      = type parameters (arbitrary types in function type specification etc)
 ;; X Y -> Z     = function with argument types X, Y and result type Z
 ;; Nat          = natural number (including zero) (Scheme Fixnum or exact Integer)
@@ -98,7 +98,7 @@
     (do ((i 0 (add1 i))) ((fx=? i n) vec)
       (vector-set! vec i (proc i)))))
                                                                                             ;
-(define (vector-filter pred vec)         ;; (X -> Bool) (vectorof X) -> (vectorof X)
+(define (vector-filter pred vec)         ;; (X -> Boolean) (vectorof X) -> (vectorof X)
   ;; produce vector of elements of vec for which (pred elt) is not false
   (list->vector (filter pred (vector->list vec))))
                                                                                             ;
@@ -149,7 +149,7 @@
     (do ((i 0 (add1 i))) ((fx=? i size) result)
       (vector-set! result i (vector-ref vec i)))))
                                                                                             ;
-(define (vector-count proc vec)          ;; (X -> Bool) (vectorof X) -> Nat
+(define (vector-count proc vec)          ;; (X -> Boolean) (vectorof X) -> Nat
   ;; produce count of elements of vec for which (proc elt) is not false
   (vector-fold-left 
     (lambda (acc elt) (if (proc elt) (add1 acc) acc))
@@ -179,12 +179,12 @@
   (fx- (bitwise-length bits) (bitwise-first-bit-set bits)))
                                                                                             ;
 (define (bitwise->list bits)             ;; Bits -> (listof Nat)
-  ;; produce indices of set bits in bits
+  ;; produce indices in ascending order of set bits in bits
   (let loop ((bits bits) (result (list)))
     (if (positive? bits)
       (let ((b (bitwise-first-bit-set bits)))
         (loop (bitwise-copy-bit bits b 0) (cons b result)))
-      result)))
+      (reverse result))))
                                                                                             ;
 (define (random n)                       ;; Nat -> Nat
   ;; produce random integer in range 0..n-1
@@ -195,7 +195,7 @@
     (mod *random-state* n)))
     
   (define *random-state* 48271)
-  
+                                                                                            ;
 (define (random-seed! n)                 ;; Nat ->
   (set! *random-state* n))
                                                                                             ;
