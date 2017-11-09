@@ -505,7 +505,7 @@
 (define (get-predictive-cols tm)         ;; TM -> (listof ColX)
   (let loop ((previous-colx -1) (predictive-cols '()) (segments (tm-active-segments tm)))
     (let ((this-colx (segs->colx tm segments)))
-      (cond [ (null? segments) predictive-cols ]
+      (cond [ (null? segments) (reverse predictive-cols) ]
             [ (fx=? this-colx previous-colx) 
                 (loop previous-colx predictive-cols (cdr segments)) ]
             [ else (loop this-colx (cons this-colx predictive-cols) (cdr segments)) ]))))
