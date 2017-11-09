@@ -30,7 +30,11 @@
 (library (libraries htm-attm)
                                                                                             ;
 (export
+  tm:perm
+  tm:prex
   tm:permanence
+  tm:synapse
+  tm:segment
   tm:get-active-cols
   (rename
     (make-tm              tm:constructor)
@@ -367,18 +371,44 @@
                                                                                             ;
 (define (calculate-predicted-cells       ;; TM {Segment} {Segment} -> {CellX}
           tm basal-segs apical-segs)
-  ;; Set predicted-cells: if MIN_PREDICTIVE_THRESHOLD is 2 and predictiveScore scores 2 for
-  ;; any basal segment + 1 for any apical segment, then predicted cells are those with active
-  ;; basal segments but no apical segments
-  (let loop ( (basal-segs  basal-segs)
-              (apical-segs apical-segs)
-              (predicted-cells '()))
-    (if (null? basal-segs) (reverse predicted-cells)
-      (let* ( (cellx (segs->cellx tm basal-segs))
-              (apical-segs (advance-to-cell tm cellx apical-segs)))
-        (if (fx=? cellx (segs->cellx tm apical-segs))
-            (loop (advance-to-cell tm (add1 cellx) basal-segs) apical-segs predicted-cells)
-            (loop (cdr basal-segs) apical-segs (cons cellx predicted-cells)))))))
+  ;; for listed segs, cells with max depolarization score within each column are predicted
+  (let each-col ((basal-segs basal-segs) (apical-segs apical-segs) 
+                 (colx (fxmin (segs->colx tm basal-segs) (segs->colx tm apical-segs)))
+                 (predicted-cells '()))
+    (let ((max-depolarization
+      (let loop ((basal-segs basal-segs) (apical-segs apical-segs) (max-this-col 0))
+        (let* ( (basal-cellx  (segs->cellx tm basal-segs))
+                (apical-cellx (segs->cellx tm apical-segs))
+                (cellx (fxmin basal-cellx apical-cellx)))
+          (if (and (fx<? cellx (tm-num-cells tm))
+                   (fx=? (cellx->colx tm cellx) colx))
+            (loop 
+              (if (fx=? cellx basal-cellx)  (cdr basal-segs)  basal-segs)
+              (if (fx=? cellx apical-cellx) (cdr apical-segs) apical-segs)
+              (fxmax max-this-col (fx+ (if (fx=? cellx basal-cellx)  2 0)
+                                       (if (fx=? cellx apical-cellx) 1 0))))
+            max-this-col)))))
+      (let loop ((basal-segs basal-segs) (apical-segs apical-segs)
+                 (predicted-cells-for-col '()))
+        (let* ( (basal-cellx  (segs->cellx tm basal-segs))
+                (apical-cellx (segs->cellx tm apical-segs))
+                (cellx (fxmin basal-cellx apical-cellx))
+                (this-colx (cellx->colx tm cellx)))
+          (if (and (fx<? cellx (tm-num-cells tm))
+                   (fx=? this-colx colx))
+            (loop 
+              (if (fx=? cellx basal-cellx)  (cdr basal-segs)  basal-segs)
+              (if (fx=? cellx apical-cellx) (cdr apical-segs) apical-segs)
+              (if (and (fx>=? max-depolarization 2)
+                       (fx=? max-depolarization 
+                             (fx+ (if (fx=? cellx basal-cellx)  2 0)
+                                  (if (fx=? cellx apical-cellx) 1 0))))
+                  (cons cellx predicted-cells-for-col)
+                  predicted-cells-for-col))
+            (if (fx<? this-colx (tm-num-columns tm))
+              (each-col basal-segs apical-segs this-colx
+                        (append predicted-cells-for-col predicted-cells))
+              (reverse (append predicted-cells-for-col predicted-cells)))))))))
                                                                                             ;
 (define (depolarize-cells                ;; TM {CellX} {CellX} Boolean ->
           tm basal-input apical-input learn)
@@ -428,6 +458,7 @@
   [ (tm active-columns basal-input apical-input basal-growth-candidates apical-growth-candidates learn)
       ;; general case: one time step with external, basal, and apical inputs
       (depolarize-cells tm basal-input apical-input learn)
+      (tm-prev-predicted-cells-set! tm (tm-predicted-cells tm))
       (activate-cells tm active-columns basal-input apical-input 
                       basal-growth-candidates apical-growth-candidates learn) ]
                                                                                             ;
@@ -529,7 +560,7 @@
     (compute tm '(1) #t)
     [expect ([get-predicted-cells tm] '(4))
             ([get-active-cells    tm] '(4))])
-                                                                                            ;
+
 (test "BurstUnpredictedColumns")
   (let* ( (tm (make-test-tm)))
     (compute tm '(0) #t)
@@ -716,10 +747,26 @@
               ((tm:perm (vector-ref synapses 3)) 2100)
               ((not (member (tm:prex (vector-ref synapses 3)) '(3 4))) #f)]))
                                                                                             ;
+(test "ActiveSegmentGrowSynapsesAccordingToPotentialOverlap")
+  (let* ( (tm (make-tm '(32) 1
+                `[basal-input-size . ,(* 32 1)]
+                `[activation-threshold . 2]
+                `[min-threshold . 1]
+                `[sample-size . 4]
+                `[predicted-segment-decrement . 0]))
+          (active-segment (create-basal-segment tm 5)))
+    (create-basal-synapses tm active-segment '(0 1 2))
+    (seg-synapses-set! active-segment (vector (tm:synapse 0 5000) (tm:synapse 1 5000) (tm:synapse 2 2000)))
+    (compute tm '(5) '(0 1 2 3 4) '() '(0 1 2 3 4) '() #t)
+    (let* ( (synapses (seg-synapses active-segment)))
+      [expect ((vector-length synapses) 4)
+              ((tm:perm (vector-ref synapses 3)) 2100)
+              ((not (member (tm:prex (vector-ref synapses 3)) '(3 4))) #f)]))
+                                                                                            ;
   ;; flush any test failures
   (when failures
     (display tests)
     (newline))
   (flush-output-port (current-output-port))
-                                                                                              ;
+
 )
