@@ -18,11 +18,12 @@
 
   ;; Translated from NuPIC hello_sp.py, see comments there for more info.
 
-(library-directories "../src/")
+(library-directories "../HTM-scheme/algorithms/")
 
-(import (rnrs)
-        (libraries htm-prelude)
-        (libraries htm-sp))
+(import 
+  (rnrs)
+  (htm_prelude)
+  (spatial_pooler))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))

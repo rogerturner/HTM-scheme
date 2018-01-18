@@ -1,4 +1,5 @@
 #!r6rs
+
 ;; ========= HTM-scheme Spatial Pooler Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on spatial_pooler.py which is part of the Numenta Platform for  ;;
@@ -715,18 +716,18 @@
         (ravel2 input-coords inp-dims)))))
 
   [let ((SP11024 (default-sp '(1 1024) '(1 2048) '[potential-radius . 512])))
-    (expect ( [map-column SP11024    0]    0 )
-            ( [map-column SP11024 2047] 1023 ))]
+    (expect ( [map-column SP11024    0]    0)
+            ( [map-column SP11024 2047] 1023))]
   [let ((SP124 (default-sp '(12) '(4) '[potential-radius . 2]))
         (SP44 (default-sp '(4) '(4))))
-    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP124 i] (add1 (* 3 i)) )))
-    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP44  i] i )))]
+    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP124 i] (add1 (* 3 i)))))
+    (do ((i 0 (add1 i))) ((= i 4)) (expect ( [map-column SP44  i] i)))]
   [let ((SP2D1 (default-sp '(36 12) '(12 4)))
         (SP2D2 (default-sp '(3 5) '(4 4))))
     (do ((i 0 (add1 i))) ((= i 5)) (expect ( [map-column SP2D1 (list-ref '( 0  4  5  7  47) i)]
-                                                               (list-ref '(13 49 52 58 418) i))))
+                                             (list-ref '(13 49 52 58 418) i))))
     (do ((i 0 (add1 i))) ((= i 3)) (expect ( [map-column SP2D2 (list-ref '(0 3 15) i)]
-                                                               (list-ref '(0 4 14) i))))]
+                                             (list-ref '(0 4 14) i))))]
                                                                                             ;
 (define (map-potential-v sp cx)          ;; SP ColumnX -> (vectorof InputX)
   ;; produce vector of potential input indices for column
@@ -737,12 +738,12 @@
 
   (let ((sp (lambda (ni nc pr pp)
               (default-sp (list ni) (list nc) (cons 'potential-radius pr) (cons 'potential-pct pp)))))
-    [expect ( (vector-sort < [map-potential-v (sp 12 4 2 1) 0])  '#(0 1 2 3)   )
-            ( (vector-sort < [map-potential-v (sp 12 4 2 1) 2])  '#(5 6 7 8 9) )
-            ( (vector-length [map-potential-v (sp 12 4 2 0.5) 0])  2           )
-            ( [map-potential-v (sp 1 1 2 1.0) 0] '#(0) )])
+    [expect ( (vector-sort < [map-potential-v (sp 12 4 2 1) 0])  '#(0 1 2 3))
+            ( (vector-sort < [map-potential-v (sp 12 4 2 1) 2])  '#(5 6 7 8 9))
+            ( (vector-length [map-potential-v (sp 12 4 2 0.5) 0])  2)
+            ( [map-potential-v (sp 1 1 2 1.0) 0] '#(0))])
   [let ((SP11024 (default-sp '(1 1024) '(1 2048) '[potential-radius . 2] '[potential-pct . 1])))
-    (expect ( [map-potential-v SP11024 1023] '#(510 512 513 511 509) ))]
+    (expect ( (vector-sort < [map-potential-v SP11024 1023]) '#(509 510 511 512 513)))]
                                                                                             ;
 ;; -- Boost factors --
                                                                                             ;
@@ -924,72 +925,72 @@
 (define (hello-sp) 
   (display "See nupic/examples/sp/hello_sp.py") (newline)
   (letrec* ( 
-    (inp-dims '(32 32))
-    (col-dims '(64 64))
-    (ni   (apply * inp-dims))
-    (sp   (make-sp* inp-dims col-dims '[global-inhibition . #t]
-          `[potential-radius                . ,ni]
-          `[num-active-columns-per-inh-area . ,(int<- (* 0.02 (apply * col-dims)))]
-          `[syn-perm-active-inc             . ,(perm<- 0.01)]
-          `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
-    (create-input (lambda () (random-bits ni)))
-    (run          (lambda (description input learn prev-cols)
-                    (let* ( (cols  (list-sort < (compute sp input learn)))
-                            (score (percent-overlap (list->bitwise cols) (list->bitwise prev-cols))))
-                      (for-each display `(,description ": " ,(percent->string score) " ("))
-                      (for-each (lambda (x) (display x) (display " ")) (take 15 cols)) 
-                      (display "... ") (display (car (reverse cols))) (display ")") (newline)
-                      cols)))
-    (input1 (create-input))
-    (input2 (create-input))
-    (input3 (create-input))
-    (input4 (corrupt-vector input3 ni 0.1))
-    (input5 (corrupt-vector input4 ni 0.2)))
-  (let* (
-      (cols1 (run "Random 1" input1 #f '()))
-      (cols2 (run "Random 2" input2 #f cols1))
-      (cols3 (run "Random 3" input3 #t cols2))
-      (cols4 (run "Repeat 3" input3 #t cols3)))
-    (run "Noise .1" input4 #t cols4)
-    (run "Noise .3" input5 #t cols4)))
+            (inp-dims '(32 32))
+            (col-dims '(64 64))
+            (ni   (apply * inp-dims))
+            (sp   (make-sp* inp-dims col-dims '[global-inhibition . #t]
+                   `[potential-radius                . ,ni]
+                   `[num-active-columns-per-inh-area . ,(int<- (* 0.02 (apply * col-dims)))]
+                   `[syn-perm-active-inc             . ,(perm<- 0.01)]
+                   `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
+            (create-input (lambda () (random-bits ni)))
+            (run          (lambda (description input learn prev-cols)
+                            (let* ( (cols  (list-sort < (compute sp input learn)))
+                                    (score (percent-overlap (list->bitwise cols) (list->bitwise prev-cols))))
+                              (for-each display `(,description ": " ,(percent->string score) " ("))
+                              (for-each (lambda (x) (display x) (display " ")) (take 15 cols)) 
+                              (display "... ") (display (car (reverse cols))) (display ")") (newline)
+                              cols)))
+            (input1 (create-input))
+            (input2 (create-input))
+            (input3 (create-input))
+            (input4 (corrupt-vector input3 ni 0.1))
+            (input5 (corrupt-vector input4 ni 0.2)))
+   (let* (
+          (cols1 (run "Random 1" input1 #f '()))
+          (cols2 (run "Random 2" input2 #f cols1))
+          (cols3 (run "Random 3" input3 #t cols2))
+          (cols4 (run "Repeat 3" input3 #t cols3)))
+     (run "Noise .1" input4 #t cols4)
+     (run "Noise .3" input5 #t cols4)))
   'ok)
                                                                                             ;
 (define (sp-tutorial)
   (display "See nupic/examples/sp/sp_tutorial.py") (newline)
   (let* ( 
-      (input-dimensions  '(1024 1))
-      (column-dimensions '(2048 1))
-      (input-size    (apply * input-dimensions))
-      (column-number (apply * column-dimensions))
-      (create-input  (lambda (_) (random-bits input-size)))
-      (input-array   (create-input 0))
-      (sp   (make-sp* input-dimensions column-dimensions
-            `[potential-radius                . ,(int<- (* 0.5 input-size))]
-            `[num-active-columns-per-inh-area . ,(int<- (* 0.02 column-number))]
-            `[global-inhibition               . #t]
-            `[syn-perm-active-inc             . ,(perm<- 0.01)]
-            `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
-      (active-cols   (compute sp input-array #f))
-      (all-counts    (vector-map count (calculate-overlap sp input-array)))
-      (active-counts (vector-refs all-counts (list->vector active-cols)))
-      (mean          (lambda (vec) (int<- (vector-average vec))))
-      (for-each-noise-level
-        (lambda (description proc)
-          (display description) (newline)
-          (do ((i 0 (add1 i))) ((= i 11) )
-            (let ((noise-level (/ i 10.0)))
-              (for-each display
-                `(,noise-level "  " ,(percent->string (proc noise-level)) #\newline)))))))
+         (input-dimensions  '(1024 1))
+         (column-dimensions '(2048 1))
+         (input-size    (apply * input-dimensions))
+         (column-number (apply * column-dimensions))
+         (create-input  (lambda (_) (random-bits input-size)))
+         (input-array   (create-input 0))
+         (sp   (make-sp* input-dimensions column-dimensions
+                `[potential-radius                . ,(int<- (* 0.5 input-size))]
+                `[num-active-columns-per-inh-area . ,(int<- (* 0.02 column-number))]
+                `[global-inhibition               . #t]
+                `[syn-perm-active-inc             . ,(perm<- 0.01)]
+                `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
+         (active-cols   (compute sp input-array #f))
+         (all-counts    (vector-map count (calculate-overlap sp input-array)))
+         (active-counts (vector-refs all-counts (list->vector active-cols)))
+         (mean          (lambda (vec) (int<- (vector-average vec))))
+         (for-each-noise-level
+           (lambda (description proc)
+             (display description) (newline)
+             (do ((i 0 (add1 i))) ((= i 11))
+               (let ((noise-level (/ i 10.0)))
+                 (for-each display
+                   `(,noise-level "  " ,(percent->string (proc noise-level)) #\newline)))))))
     (for-each display 
       `("Figure 1 - overlap count means" #\newline
         "all cols: " ,(mean all-counts) #\newline
         "  active: " ,(mean active-counts) #\newline))
     (for-each-noise-level "Figure 2 - noise:overlap linear" (lambda (nl)
-      (percent-overlap input-array (corrupt-vector input-array input-size nl))))
+                                                             (percent-overlap input-array (corrupt-vector input-array input-size nl))))
     (for-each-noise-level "Figure 3 - without training" (lambda (nl)
-      (percent-overlap (list->bitwise (compute sp input-array #f))
-                       (list->bitwise (compute sp 
-                         (corrupt-vector input-array input-size nl) #f)))))
+                                                         (percent-overlap (list->bitwise (compute sp input-array #f))
+                                                                          (list->bitwise (compute sp 
+                                                                                          (corrupt-vector input-array input-size nl) #f)))))
     (let* ( (num-examples 10)
             (input-vectors (build-vector num-examples create-input))
             (epochs 30))
@@ -997,8 +998,8 @@
         (do ((i 0 (add1 i))) ((= i num-examples))
           (compute sp (vector-ref input-vectors i) #t)))
       (for-each-noise-level "Figure 4 - with training: sigmoid" (lambda (nl)
-        (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
-                         (list->bitwise (compute sp 
-                           (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
+                                                                 (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
+                                                                                  (list->bitwise (compute sp 
+                                                                                                  (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
 
-  #;(time (sp-tutorial))                 ;; uncomment to run on Chez load-program
+#;(time (sp-tutorial))                 ;; uncomment to run on Chez load-program

@@ -25,7 +25,7 @@
 
 #!chezscheme
 
-(optimize-level 3)
+;(optimize-level 3)
                                                                                             ;
 (library (libraries htm-attm)
                                                                                             ;

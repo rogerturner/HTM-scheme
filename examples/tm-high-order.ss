@@ -18,11 +18,12 @@
 
   ;; Translated from NuPIC tm_high_order.py, see comments there for more info.
 
-(library-directories "../src/")
+(library-directories "../HTM-scheme/algorithms/")
 
-(import (rnrs)
-        (libraries htm-prelude)
-        (libraries htm-tm))
+(import 
+  (rnrs)
+  (htm_prelude)
+  (temporal_memory))
 
 (define (cols->string cols)              ;; (listof ColX) -> String [of hex chars]
   (list->string (reverse (string->list (number->string (list->bitwise cols) 16)))))

@@ -670,8 +670,8 @@
 (define (hello-tm)
   (let* ( (format-row (lambda (x) (vector-fold-left     ;; (vectorof Number) -> String
                                     (lambda (s xc) (string-append s  
-                                        (if (zero? (mod (string-length s) 11)) " " "")
-                                        (number->string xc)))
+                                                    (if (zero? (mod (string-length s) 11)) " " "")
+                                                    (number->string xc)))
                                     "" (vector-take x 100))))
           (tm (make-tm* '(50) 2                                 ;; Step 1: create Temporal Pooler instance with appropriate parameters
                       `[initial-permanence    . ,(perm<- 0.5)]
@@ -698,16 +698,16 @@
       (tm-reset tm))
     (do ((j 0 (add1 j))) ((= j 5))                              ;; Step 4: send the same sequence of vectors and look at predictions made by
       (for-each display `(                                      ;; temporal memory
-        "--------" ,(string-ref "ABCDE" j) "--------" #\newline 
-        "Raw input vector: " ,(format-row (vector-ref x j)) #\newline))
-        (let ((active-columns (nzindices (vector-ref x j))))
-        (tm-compute tm active-columns #f))
+                          "--------" ,(string-ref "ABCDE" j) "--------" #\newline 
+                          "Raw input vector: " ,(format-row (vector-ref x j)) #\newline))
+      (let ((active-columns (nzindices (vector-ref x j))))
+       (tm-compute tm active-columns #f))
       (let ((act-col-state (build-vector 50 (lambda (cx)
-                               (if (member cx (map (lambda (x) (cellx->colx tm x))
-                                 (tm-active-cells tm))) 1 0)))))
+                                             (if (member cx (map (lambda (x) (cellx->colx tm x))
+                                                             (tm-active-cells tm))) 1 0)))))
         (for-each display `("Active columns:   " ,(format-row act-col-state) #\newline)))
       (let ((pred-col-state (build-vector 50 (lambda (cx)
-                                (if (member cx (tm-get-predictive-cols tm)) 1 0)))))
+                                              (if (member cx (tm-get-predictive-cols tm)) 1 0)))))
         (for-each display `("Predicted columns:" ,(format-row pred-col-state) #\newline))))))
 
-  #;(time (hello-tm))                 ;; uncomment to run on Chez load-program
+#;(time (hello-tm))                 ;; uncomment to run on Chez load-program

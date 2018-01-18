@@ -1,5 +1,3 @@
-#!chezscheme (optimize-level 3)
-
 ;; ========= HTM-scheme Spatial Pooler Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -23,18 +21,22 @@
   ;; Max 2 dimensions, no wraparound, no parameter consistency checking.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-(library (libraries htm-sp)
-
-  (export
-    perm<-
-    overlap-count
-    calculate-overlap
-    make-sp*
-    compute)
-    
-  (import 
-    (rnrs)                   ;; use (except (chezscheme) add1 make-list random) for load-program
-    (libraries htm-prelude))
+#!chezscheme
+                                                                                            ;
+(optimize-level 3)
+                                                                                            ;
+(library (spatial_pooler)
+                                                                                            ;
+(export
+  perm<-
+  overlap-count
+  calculate-overlap
+  make-sp*
+  compute)
+                                                                                            ;
+(import 
+  (rnrs)                   ;; use (except (chezscheme) add1 make-list random) for load-program
+  (htm_prelude))
     
 ;; -- Spatial Pooler Types --
                                                                                             ;

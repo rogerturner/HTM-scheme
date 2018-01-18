@@ -14,45 +14,45 @@
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #!chezscheme 
-
+                                                                                            ;
 (optimize-level 3)
-
-(library (libraries htm-prelude)
-
-  (export
-    add1
-    make-list
-    build-list
-    take
-    list-average
-    int<-
-    id
-    build-vector 
-    id
-    vector-filter
-    vector-map-indexed
-    vector-fold-left
-    vector-average
-    fxvector-max
-    x10k
-    fx10k<-
-    fx10k*
-    vector-extend
-    vector-take
-    vector-count
-    vector-indices
-    vector-refs
-    list->bitwise
-    vector->bitwise
-    bitwise-span
-    bitwise->list
-    random
-    random-seed!
-    vector-sample
-    key-word-args
-    define-memoized)
-    
-  (import (rnrs))
+                                                                                            ;
+(library (htm_prelude)
+                                                                                            ;
+(export
+  add1
+  make-list
+  build-list
+  take
+  list-average
+  unique
+  int<-
+  id
+  build-vector 
+  vector-filter
+  vector-map-indexed
+  vector-fold-left
+  vector-average
+  fxvector-max
+  x10k
+  fx10k<-
+  fx10k*
+  vector-extend
+  vector-take
+  vector-count
+  vector-indices
+  vector-refs
+  list->bitwise
+  vector->bitwise
+  bitwise-span
+  bitwise->list
+  random
+  random-seed!
+  vector-sample
+  key-word-args
+  define-memoized)
+                                                                                            ;
+(import (rnrs))
 
 ;; -- Types --
 ;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
@@ -85,6 +85,13 @@
   ;; produce mean of non-empty list
   (/ (apply + l) (length l)))
                                                                                             ;
+(define (unique eql? xs)                 ;; (X X -> Boolean) (listof X) -> (listof X)
+  ;; produce list with adjacent duplicates by eql? removed
+  (cond [(null? xs) '()]
+        [(null? (cdr xs)) xs]
+        [(eql? (car xs) (cadr xs)) (unique eql? (cdr xs))]
+        [else (cons (car xs) (unique eql? (cdr xs)))]))
+                                                                                      ;
 (define (int<- x)                        ;; Number -> Integer
   (exact (round x)))
                                                                                             ;
@@ -214,8 +221,13 @@
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
                                                                                             ;
-(define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
+(define (key-word-args args defaults check-args)    ;; (listof KWarg) (listof KWarg) -> (listof X)
   ;; KWarg is [key . value]; produce list of default values overridden by arg values
+  (when check-args
+    (for-each (lambda (arg-kv)
+                (unless (assq (car arg-kv) defaults)
+                  (error #f "unknown keyword arg" arg-kv)))
+              args))
   (map (lambda (default-kv)
          (let ((kv (assq (car default-kv) args)))  ;; if this default in args
            (if kv (cdr kv) (cdr default-kv))))     ;; then use given val

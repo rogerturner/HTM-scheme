@@ -18,11 +18,12 @@
 
   ;; Translated from NuPIC hello_tm.py, see comments there for more info.
 
-(library-directories "../src/")
+(library-directories "../HTM-scheme/algorithms/")
 
-(import (rnrs)
-        (libraries htm-prelude)
-        (libraries htm-tm))
+(import 
+  (rnrs)
+  (htm_prelude)
+  (temporal_memory))
 
 (define (hello-tm)
   (display "See nupic/examples/tm/hello_tm.py") (newline)
