@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; ========= HTM-scheme Temporal Memory Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -23,15 +25,12 @@
   ;; revision 0.5
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-#!chezscheme 
-                                                                                            ;
-(optimize-level 3)
-                                                                                            ;
-(library (temporal_memory)
+(library (HTM-scheme HTM-scheme algorithms temporal_memory)
                                                                                             ;
 (export
   tm-num-columns
   tm-cells-per-column
+  tm-initial-permanence
   tm-max-new-synapse-count
   tm-permanence-increment
   tm-permanence-decrement
@@ -57,12 +56,12 @@
   sorted-segs
   adapt-segment
   create-segment
-  grow-synapses
   least-used-cell
   skip-col
   cellx->colx
   segs->cellx
   segs->colx
+  add-to-pre-index
   colxs->colx
   seg-cellx
   seg-flatx
@@ -70,6 +69,9 @@
   seg-synapses-set!
   seg-last-used-set!
   syn-perm
+  synapses-ref
+  build-synapses
+  in-synapses?
   syn-prex
   synapses-length
   clip-max
@@ -86,8 +88,8 @@
     (get-predictive-cols tm:get-predictive-cols)))
                                                                                             ;    
 (import 
-  (except (chezscheme) add1 make-list random reset)
-  (htm_prelude))
+  (rnrs)
+  (HTM-scheme HTM-scheme algorithms htm_prelude))
 
 ;; === Temporal Memory Types ===
                                                                                             ;

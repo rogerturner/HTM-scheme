@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; === HTM-scheme Apical Tiebreak Pair Memory Copyright 2017 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -21,11 +23,7 @@
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-#!chezscheme
-                                                                                            ;
-(optimize-level 3)
-                                                                                            ;
-(library (apical_tiebreak_pair_memory)
+(library (HTM-scheme HTM-scheme algorithms apical_tiebreak_pair_memory)
                                                                                             ;
 (export
   tm:permanence
@@ -42,9 +40,9 @@
     (get-apical-predicted-cells atpm:get-apical-predicted-cells)))
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list random reset)
-  (htm_prelude)
-  (apical_tiebreak_temporal_memory))
+  (rnrs)
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory))
                                                                                             ;
 (define (compute tm active-columns       ;; TM {ColX} {CellX} {CellX} {CellX} {CellX} Boolean ->
           basal-input apical-input basal-growth-candidates apical-growth-candidates learn)

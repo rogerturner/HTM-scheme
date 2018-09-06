@@ -1,4 +1,6 @@
-;; ============ HTM-scheme Prelude Copyright 2017 Roger Turner. ============
+#!r6rs
+
+;; === HTM-scheme/algorithms/htm_prelude Copyright 2017 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; This program is free software: you can redistribute it and/or modify  ;;
   ;; it under the terms of the GNU Affero Public License version 3 as      ;;
@@ -13,11 +15,7 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-#!chezscheme 
-                                                                                            ;
-(optimize-level 3)
-                                                                                            ;
-(library (htm_prelude)
+(library (HTM-scheme HTM-scheme algorithms htm_prelude)
                                                                                             ;
 (export
   add1
@@ -50,6 +48,8 @@
   random-seed!
   vector-sample
   key-word-args
+  set-tracer!
+  trace
   define-memoized)
                                                                                             ;
 (import (rnrs))
@@ -187,11 +187,20 @@
                                                                                             ;
 (define (bitwise->list bits)             ;; Bits -> (listof Nat)
   ;; produce indices in ascending order of set bits in bits
-  (let loop ((bits bits) (result (list)))
+  ;; this is much faster in Racket 7.0 than loop below
+  (let loop ((index (bitwise-length bits)) (result (list)))
+    (if (fxnegative? index) result
+      (loop (fx- index 1)
+            (if (bitwise-bit-set? bits index)
+              (cons index result)
+              result))))
+  ;; this is faster in Chez 9.5 than loop above
+  #;(let loop ((bits bits) (result (list)))
     (if (positive? bits)
       (let ((b (bitwise-first-bit-set bits)))
         (loop (bitwise-copy-bit bits b 0) (cons b result)))
-      (reverse result))))
+      (reverse result)))
+  )
                                                                                             ;
 (define (random n)                       ;; Nat -> Nat
   ;; produce random integer in range 0..n-1
@@ -232,7 +241,15 @@
          (let ((kv (assq (car default-kv) args)))  ;; if this default in args
            (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
        defaults))
-                                                                                            ;
+  
+(define *tracer* (lambda x (if #f #f)))
+
+(define (set-tracer! proc)
+  (set! *tracer* proc))
+                                                                                         ;
+(define trace
+  (lambda x (apply *tracer* x)))
+  
 (define-syntax define-memoized           ;; Function-defn -> defn with arg/result cache
   (syntax-rules ()
     ((define-memoized (f arg ...) body ...)

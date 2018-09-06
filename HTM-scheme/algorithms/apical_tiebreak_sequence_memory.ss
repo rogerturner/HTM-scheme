@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; === HTM-scheme Apical Tiebreak Sequence Memory Copyright 2017 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -21,11 +23,7 @@
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-#!chezscheme
-                                                                                            ;
-(optimize-level 3)
-                                                                                            ;
-(library (apical_tiebreak_sequence_memory)
+(library (HTM-scheme HTM-scheme algorithms apical_tiebreak_sequence_memory)
                                                                                             ;
 (export
   tm:permanence
@@ -44,9 +42,9 @@
     (get-next-apical-predicted-cells atsm:get-next-apical-predicted-cells)))
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list random reset)
-  (htm_prelude)
-  (apical_tiebreak_temporal_memory))
+  (rnrs)
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory))
                                                                                             ;
 (define-record-type tm                   ;; TM
   (parent tm:tm)
@@ -113,7 +111,7 @@
   (unique (map-segments-to-cells (tm-active-apical-segments tm))))
 
 ;; === Smoke tests ===
-                                                                                           ;
+                                                                                          ;
 (define tests "")
 (define failures #f)
                                                                                             ;
@@ -135,22 +133,22 @@
                         (set! failures #t)
                         (set! tests "")))) ...)])))
                                                                                             ;
-(define print-fields
-  ;; Excerpt From: R. Kent Dybvig. The Scheme Programming Language, 4th Edition.
-  (lambda (r)
-    (unless (record? r)
-      (assertion-violation 'print-fields "not a record" r))
-    (let loop ([rtd (record-rtd r)])
-      (let ([prtd (record-type-parent rtd)])
-        (when prtd (loop prtd)))
-      (let* ([v (record-type-field-names rtd)]
-             [n (vector-length v)])
-        (do ([i 0 (+ i 1)])
-            ((= i n))
-          (write (vector-ref v i))
-          (display "=")
-          (write ((record-accessor rtd i) r))
-          (newline))))))
+;(define print-fields
+;  ;; Excerpt From: R. Kent Dybvig. The Scheme Programming Language, 4th Edition.
+;  (lambda (r)
+;    (unless (record? r)
+;      (assertion-violation 'print-fields "not a record" r))
+;    (let loop ([rtd (record-rtd r)])
+;      (let ([prtd (record-type-parent rtd)])
+;        (when prtd (loop prtd)))
+;      (let* ([v (record-type-field-names rtd)]
+;             [n (vector-length v)])
+;        (do ([i 0 (+ i 1)])
+;            ((= i n))
+;          (write (vector-ref v i))
+;          (display "=")
+;          (write ((record-accessor rtd i) r))
+;          (newline))))))
                                                                                             ;
 (define (make-test-tm . options)
   (random-seed! 42)
@@ -180,6 +178,7 @@
   (compute tm '(1) #t)
   [expect ([get-predicted-cells tm] '(4))
           ([tm:get-active-cells    tm] '(4))])
+                                                                                            ;
 (test "BurstUnpredictedColumns")
   (let* ( (tm (make-test-tm)))
   (compute tm '(0) #t)
@@ -220,9 +219,6 @@
               `[permanence-decrement        . ,(tm:permanence 0.08)]
               `[predicted-segment-decrement . ,(tm:permanence 0.02)]))
         (active-segment (create-basal-segment tm 5)))
-        
-  (define-top-level-value 'tm tm)
-        
   (create-basal-synapses tm active-segment '(0 1 2 81))
   (compute tm '(0) #t)
   (compute tm '(1) #t)
@@ -377,5 +373,6 @@
     (display tests)
     (newline))
   (flush-output-port (current-output-port))
+
 
 )

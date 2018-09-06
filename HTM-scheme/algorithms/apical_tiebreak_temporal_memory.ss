@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; === HTM-scheme Apical Tiebreak Temporal Memory Copyright 2017 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -22,11 +24,7 @@
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-#!chezscheme
-
-(optimize-level 3)
-                                                                                            ;
-(library (apical_tiebreak_temporal_memory)
+(library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
                                                                                             ;
 (export
   ;; for tests in sequence_memory
@@ -60,9 +58,9 @@
     
                                                                                               ;
 (import
-  (except (chezscheme) add1 make-list random reset)
-  (htm_prelude)
-  (rename (temporal_memory)
+  (rnrs)
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (rename (HTM-scheme HTM-scheme algorithms temporal_memory)
     (tm-active-segments             tm-active-basal-segments)
     (tm-active-segments-set!        tm-active-basal-segments-set!)
     (tm-matching-segments           tm-matching-basal-segments)
@@ -95,7 +93,6 @@
 (define-record-type tm                     ;; TM
   (parent tm:tm)
   (fields
-    column-count                           ;; Nat
     basal-input-size                       ;; Nat
     apical-input-size                      ;; Nat
     ;;cells-per-column                     ;; Nat [inherited from tm:tm]
@@ -133,7 +130,6 @@
                                                                                             ;
 (define attm-defaults                      ;; (listof KWarg)
   `(
-    [column-count                       . 2048]
     [basal-input-size                   . 0]
     [apical-input-size                  . 0]
     [reduced-basal-threshold            . 13]
@@ -151,7 +147,7 @@
     [use-apical-modulation-basal-threshold . #t]))
                                                                                             ;
 (define (in1d x1s x2s)                     ;; {X} {X} -> Bitwise
-  ;; Test whether each element of a list is also present in a second list
+  ;; produce index mask of x1s that are also in x2s
   (fold-left 
     (lambda (acc e1 e1x)
       (if (memv e1 x2s)
@@ -175,20 +171,37 @@
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
                                                                                             ;
 (define (intersect1d l1 l2)                ;; {Nat} {Nat} -> {Nat}
-  (bitwise->list (bitwise-and (list->bitwise l1) (list->bitwise l2))))
+  ;; produce intersection of sorted lists of naturals, ie
+  ;; (bitwise->list (bitwise-and (list->bitwise l1) (list->bitwise l2)))
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(or (null? l1) (null? l2)) result]
+          [(fx=? (car l1) (car l2))
+              (loop (cdr l1) (cdr l2) (cons (car l1) result))]
+          [(fx<? (car l1) (car l2))
+              (loop (cdr l1) l2 result)]
+          [else (loop l1 (cdr l2) result)])))
                                                                                             ;
 (define (setdiff1d l1 l2)                  ;; {Nat} {Nat} -> {Nat}
-  (bitwise->list (bitwise-and (list->bitwise l1) (bitwise-not (list->bitwise l2)))))
+  ;; produce difference of sorted lists of naturals, ie
+  ;; (bitwise->list (bitwise-and (list->bitwise l1) (bitwise-not (list->bitwise l2))))
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(null? l1) result]
+          [(null? l2) (append result l1)]
+          [(fx=? (car l1) (car l2))
+              (loop (cdr l1) (cdr l2) result)]
+          [(fx<? (car l1) (car l2))
+              (loop (cdr l1) l2 (cons (car l1) result))]
+          [else (loop l1 (cdr l2) (cons (car l1) result))])))
                                                                                             ;
 (define (map-segments-to-cells segments)   ;; {Segment} -> {CellX}
   (map seg-cellx segments))
                                                                                             ;
 (define (filter-segments-by-cell           ;; {Seg} {CellX} -> {Seg}
-          segments cells)
+          segments cellxs)
   ;; Return the subset of segments that are on the provided cells.
   (filter
     (lambda (segment)
-      (memv (seg-cellx segment) cells))
+      (memv (seg-cellx segment) cellxs))
     segments))
                                                                                             ;
 (define (map-segments-to-synapse-counts    ;; {Seg} -> {Nat}
@@ -199,8 +212,8 @@
     segments))
                                                                                             ;
 (define (/cpc tm)                          ;; TM -> (CellX -> ColX)
-  (let ((cpc (tm-cells-per-column tm)))
-    (lambda (cellx) (fxdiv cellx cpc))))
+  (lambda (cellx) 
+    (fxdiv cellx (tm-cells-per-column tm))))
                                                                                             ;
 (define (set-compare tm a b)               ;; TM {CellX} {ColX} -> {CellX} {CellX}
   ;; produce intersection (a&b), difference (b-a), using (a/cpc) for compare
@@ -223,7 +236,7 @@
                   (if (fx>? (car a) max-in-group)
                     (next (cdr a) (cdr group-keys) (add1 index) (car a) index)
                     (next (cdr a) (cdr group-keys) (add1 index) max-in-group index-of-max)) ]
-              [ else (per-group (cdr a) (cdr group-keys) (add1 index) (cons index-of-max result)) ]))) ])))
+              [ else (per-group a group-keys index (cons index-of-max result)) ]))) ])))
                                                                                             ;
 (define (get-all-cells-in-columns tm colxs);; TM {ColX} -> {CellX}
   ;; Calculate all cell indices in the specified columns.
@@ -258,17 +271,43 @@
     segments))
                                                                                             ;
 (define (grow-synapses-to-sample tm        ;; TM {Seg} {CellX} Nat|{Nat} (CellVecOf {FlatX}) ->
-          segments active-inputs sample-size pre-index)
-  ;; create synapses on segments, replacing low-permanence ones as needed
+          segments inputs sample-size pre-index)
+  ;; For each segment, grow synapses to a random subset of the
+  ;; inputs that aren't already connected to the segment.
   (if (fixnum? sample-size)
     (for-each
       (lambda (segment)
-        (grow-synapses tm segment sample-size active-inputs pre-index))
+        (grow-synapses tm segment sample-size inputs pre-index))
       segments)
     (for-each
       (lambda (segment sample-size)
-        (grow-synapses tm segment sample-size active-inputs pre-index))
+        (grow-synapses tm segment sample-size inputs pre-index))
       segments sample-size)))
+                                                                                            ;
+(define (grow-synapses                   ;; TM Segment Nat (listof CellX) [(CellVecOf {FlatX})] ->
+          tm segment n-desired-new-synapses inputs pre-index)
+  ;; grow synapses to all inputs that aren't already connected to the segment
+  (let* ( (synapses     (seg-synapses segment))
+          (num-synapses (synapses-length synapses))
+          (candidates   (let loop ((cs '()) (is inputs))
+                          (cond [ (null? is) cs ]
+                                [ (in-synapses? (car is) synapses)
+                                    (loop cs (cdr is)) ]
+                                [ else (loop (cons (car is) cs) (cdr is)) ])))
+          (n-actual     (fxmin n-desired-new-synapses (length candidates))))
+      (when (positive? n-actual)
+        (let ((new-prexs (vector-sample (list->vector candidates) n-actual)))
+          (seg-synapses-set! segment
+            (build-synapses (fx+ num-synapses n-actual)
+              (lambda (sx)
+                ;; copy retained synapses, make n-actual new ones
+                (if (fx<? sx num-synapses)
+                    (synapses-ref synapses sx)
+                    (let ((new-prex (vector-ref new-prexs (fx- sx num-synapses))))
+                      (add-to-pre-index new-prex segment pre-index)
+                      (tm:synapse new-prex (tm-initial-permanence tm)))))))
+          ;; keep synapses sorted for binary search in compute-activity
+          (vector-sort! fx<? (seg-synapses segment))))))
                                                                                             ;
 (define (create-segments tm                ;; TM Connections {CellX} -> {Seg}
           connections cellxs)
@@ -282,12 +321,12 @@
 (define (reset tm)                         ;; TM ->
   ;; Clear all cell and segment activity.
   (tm:reset tm)
-  (tm-predicted-cells-set! tm               '())
-  (tm-predicted-active-cells-set! tm        '())
-  (tm-active-apical-segments-set! tm        '())
-  (tm-matching-apical-segments-set! tm      '())
-  (tm-basal-potential-overlaps-set! tm      '())
-  (tm-apical-potential-overlaps-set! tm     '()))
+  (tm-predicted-cells-set! tm                '())
+  (tm-predicted-active-cells-set! tm         '())
+  (tm-active-apical-segments-set! tm         '())
+  (tm-matching-apical-segments-set! tm       '())
+  (tm-basal-potential-overlaps-set! tm  (vector))
+  (tm-apical-potential-overlaps-set! tm (vector)))
                                                                                             ;
 (define (depolarize-cells                  ;; TM {CellX} {CellX} Boolean ->
           tm basal-input apical-input learn)
@@ -296,9 +335,9 @@
                 (calculate-apical-segment-activity 
                     tm (list->vector apical-input) (tm-apical-pre-index tm))])
     (let ((reduced-basal-threshold-cells
-            (if (and learn (tm-use-apical-modulation-basal-threshold tm))
-              (map-segments-to-cells active-apical-segments)
-              '())))
+            (if (or learn (tm-use-apical-modulation-basal-threshold tm))
+              '()
+              (map-segments-to-cells active-apical-segments))))
       (let-values ([(active-basal-segments matching-basal-segments basal-potential-overlaps)
                     (calculate-basal-segment-activity tm (list->vector basal-input) 
                         (tm-basal-pre-index tm) reduced-basal-threshold-cells)])
@@ -464,7 +503,7 @@
   (let* ( (cells-for-basal-segments  (map-segments-to-cells active-basal-segments))
           (cells-for-apical-segments (map-segments-to-cells active-apical-segments))
           (fully-depolarized-cells         ;; cells with both types of segments active
-            (intersect1d  cells-for-basal-segments cells-for-apical-segments))
+            (intersect1d cells-for-basal-segments cells-for-apical-segments))
           (partly-depolarized-cells        ;; cells with basal only
             (setdiff1d cells-for-basal-segments fully-depolarized-cells))
           (inhibited-mask
@@ -561,7 +600,7 @@
     learning-segments))
                                                                                             ;
 (define (get-cells-with-fewest-segments tm ;; TM {ColX} -> {CellX}
-          columns)
+          columnxs)
   ;; For each column, get the cell that has the fewest total basal segments.
   ;; Break ties randomly.
   (map
@@ -578,7 +617,7 @@
                   (loop (add1 cellx) (cons cellx candidate-cells) n-segs) ]
               [ else (loop (add1 cellx) candidate-cells fewest-segs) ] ))
           (list-ref candidate-cells (random (length candidate-cells))))))
-    columns))
+    columnxs))
                                                                                             ;
 (define (get-active-cells tm)              ;; TM -> {CellX}
   (vector->list (tm-active-cells tm)))
