@@ -15,6 +15,9 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  ;; Library functions specialized for HTM-scheme
+  ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+
 (library (HTM-scheme HTM-scheme algorithms htm_prelude)
                                                                                             ;
 (export
@@ -28,7 +31,8 @@
   id
   build-vector 
   vector-filter
-  vector-map-indexed
+  vector-map-x
+  vector-for-each-x
   vector-fold-left
   vector-average
   fxvector-max
@@ -48,19 +52,24 @@
   random-seed!
   vector-sample
   key-word-args
-  set-tracer!
-  trace
+  intersect1d
+  union1d
+  setdiff1d
+  in1d
+  include-by-mask
+  exclude-by-mask
+  search
   define-memoized)
                                                                                             ;
 (import (rnrs))
 
 ;; -- Types --
 ;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
-;; X, Y, Z      = type parameters (arbitrary types in function type specification etc)
-;; X Y -> Z     = function with argument types X, Y and result type Z
-;; Nat          = natural number (including zero) (Scheme Fixnum or exact Integer)
-;; Fix10k       = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
-;; Bits         = Integer (Bignum) interpreted bitwise
+;; X, Y, Z  = type parameters (arbitrary types in function type specification etc)
+;; X Y -> Z = function with argument types X, Y and result type Z; [X] = optional X
+;; Nat      = natural number (including zero) (Scheme Fixnum or exact Integer)
+;; Fix10k   = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
+;; Bits     = Integer (Bignum) interpreted bitwise
 
 (define (add1 n)                         ;; Fixnum -> Fixnum
   (fx+ 1 n))
@@ -96,31 +105,36 @@
   (exact (round x)))
                                                                                             ;
 (define (id x)                           ;; X -> X
-  ;; produce argument (convenient for tests)
   x)
                                                                                             ;
-(define (build-vector n proc)            ;; Nat (Nat -> X) -> (vectorof X)
-  ;; produce vector length n by applying proc to indices
-  (let ((vec (make-vector n)))
-    (do ((i 0 (add1 i))) ((fx=? i n) vec)
-      (vector-set! vec i (proc i)))))
+(define (build-vector n f)               ;; Nat (Nat -> X) -> (vectorof X)
+  ;; produce vector length n by applying f to indices
+  (let ((v (make-vector n)))
+    (do ((i 0 (add1 i))) ((fx=? i n) v)
+      (vector-set! v i (f i)))))
                                                                                             ;
 (define (vector-filter pred vec)         ;; (X -> Boolean) (vectorof X) -> (vectorof X)
   ;; produce vector of elements of vec for which (pred elt) is not false
   (list->vector (filter pred (vector->list vec))))
                                                                                             ;
-(define (vector-map-indexed proc vec)    ;; (X Nat -> Y) (vectorof X) -> (vectorof Y)
-  ;; produce vector by applying proc to each element of vec and its index
-  (let ((result (make-vector (vector-length vec))))
-    (do ((i 0 (add1 i))) ((fx=? i (vector-length vec)) result)
-      (vector-set! result i (proc (vector-ref vec i) i)))))
+(define (with-index folder f vs)         ;; ((? -> ?) ?... -> ?) (?... -> ?) (listof (vectorof ?)) -> ?
+  (apply folder
+    (lambda xs (apply f xs))
+    (append vs (list (build-vector (vector-length (car vs)) id)))))
                                                                                             ;
-(define (vector-fold-left proc obj vec)  ;; (X Y -> X) X (vectorof Y) -> X
-  ;; (proc ... (proc (proc obj vec-0) vec-1) ... vec-last)
-  (let ((acc obj))
-    (vector-for-each
-      (lambda (x) (set! acc (proc acc x)))
-      vec)
+(define (vector-map-x f . vs)            ;; (X ... Nat -> Y) (vectorof X) ... -> (vectorof Y)
+  ;; produce vector by applying f to each element of vs and its index
+  (with-index vector-map f vs))
+                                                                                            ;
+(define (vector-for-each-x f . vs)       ;; (X ... Nat -> ) (vectorof X) ... -> 
+  ;; apply f to each element of vs and its index
+  (with-index vector-for-each f vs))
+                                                                                            ;
+(define (vector-fold-left f o . vs)      ;; (X Y ... -> X) X (vectorof Y) ... -> X
+  (let ((acc o))
+    (apply vector-for-each
+      (lambda xs (set! acc (apply f acc xs)))
+      vs)
     acc))
                                                                                             ;
 (define (vector-average vec)             ;; (vectorof Number) -> Number
@@ -149,7 +163,7 @@
     (do ((i (fx- len 1) (fx- i 1))) ((fxnegative? i) result)
       (vector-set! result i (vector-ref vec i)))))
                                                                                             ;
-(define (vector-take vec n)              ;; (vectorof X) Nat -> (vectorof X)
+(define (vector-take n vec)              ;; Nat (vectorof X) -> (vectorof X)
   ;; produce copy of first n elements of vec, or copy of vec if n > length
   (let* ( (size (fxmin n (vector-length vec)))
           (result (make-vector size)))
@@ -188,14 +202,14 @@
 (define (bitwise->list bits)             ;; Bits -> (listof Nat)
   ;; produce indices in ascending order of set bits in bits
   ;; this is much faster in Racket 7.0 than loop below
-  (let loop ((index (bitwise-length bits)) (result (list)))
+  #;(let loop ((index (bitwise-length bits)) (result (list)))
     (if (fxnegative? index) result
       (loop (fx- index 1)
             (if (bitwise-bit-set? bits index)
               (cons index result)
               result))))
   ;; this is faster in Chez 9.5 than loop above
-  #;(let loop ((bits bits) (result (list)))
+  (let loop ((bits bits) (result (list)))
     (if (positive? bits)
       (let ((b (bitwise-first-bit-set bits)))
         (loop (bitwise-copy-bit bits b 0) (cons b result)))
@@ -209,7 +223,7 @@
         (Lehmer-multiplier     48271))
     (set! *random-state* (mod (* *random-state* Lehmer-multiplier) Lehmer-modulus))
     (mod *random-state* n)))
-    
+                                                                                            ;
   (define *random-state* 48271)
                                                                                             ;
 (define (random-seed! n)                 ;; Nat ->
@@ -223,33 +237,125 @@
           [(fx=? size 1)
            (vector (vector-ref source (random source-length)))]
           [else
-            (let ((vec (vector-take source source-length)))
-              (do ((n 0 (add1 n))) ((fx=? n shuffle) (vector-take vec size))
+            (let ((vec (vector-take source-length source)))
+              (do ((n 0 (add1 n))) ((fx=? n shuffle) (vector-take size vec))
                 (let* ((r (fx+ n (random (fx- source-length n))))
                        (t (vector-ref vec r)))
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
                                                                                             ;
-(define (key-word-args args defaults check-args)    ;; (listof KWarg) (listof KWarg) -> (listof X)
+(define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
   ;; KWarg is [key . value]; produce list of default values overridden by arg values
-  (when check-args
-    (for-each (lambda (arg-kv)
-                (unless (assq (car arg-kv) defaults)
-                  (error #f "unknown keyword arg" arg-kv)))
-              args))
   (map (lambda (default-kv)
          (let ((kv (assq (car default-kv) args)))  ;; if this default in args
            (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
        defaults))
-  
-(define *tracer* (lambda x (if #f #f)))
-
-(define (set-tracer! proc)
-  (set! *tracer* proc))
-                                                                                         ;
-(define trace
-  (lambda x (apply *tracer* x)))
-  
+                                                                                            ;
+(define (intersect1d l1 l2)              ;; {Fixnum} {Fixnum} -> {Fixnum}
+  ;; produce intersection of sorted lists of fixnums
+  ;; (assert (equal? l1 (list-sort fx<? l1)))
+  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(or (null? l1) (null? l2)) (reverse result)]
+          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 result)]
+          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) result)]
+          [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
+                                                                                            ;
+(define (union1d l1 l2)                  ;; {Fixnum} {Fixnum} -> {Fixnum}
+  ;; produce union of sorted lists of fixnums
+  ;; (assert (equal? l1 (list-sort fx<? l1)))
+  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(and (null? l1) (null? l2)) (reverse result)]
+          [(null? l1) (append (reverse result) l2)]
+          [(null? l2) (append (reverse result) l1)]
+          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
+          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l2) result))]
+          [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
+                                                                                            ;
+(define (setdiff1d l1 l2)                ;; {Fixnum} {Fixnum} -> {Fixnum}
+  ;; produce difference of sorted lists of fixnums
+  ;; (assert (equal? l1 (list-sort fx<? l1)))
+  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(null? l1) (reverse result)]
+          [(null? l2) (append (reverse result) l1)]
+          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
+          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l1) result))]
+          [else (loop (cdr l1) (cdr l2) result)])))
+                                                                                            ;
+(define (in1d x1s x2s)                   ;; {X} {X} -> Bits
+  ;; produce index mask of x1s that are also in x2s
+  (fold-left 
+    (lambda (acc e1 e1x)
+      (if (memv e1 x2s)
+        (bitwise-copy-bit acc e1x 1)
+        acc))
+    0 x1s (build-list (length x1s) id)))
+                                                                                            ;
+(define (include-by-mask xs mask)        ;; {X} Bits -> {X}
+  ;; extract elements of xs corresponding to 1 bits in mask
+  (vector->list
+    (vector-refs 
+      (list->vector xs) 
+      (list->vector (bitwise->list mask)))))
+                                                                                            ;
+(define (exclude-by-mask xs mask)        ;; {X} Bits -> {X}
+  (vector->list
+    (vector-refs 
+      (list->vector xs) 
+      (list->vector 
+        (bitwise->list
+          (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
+                                                                                            ;
+(define (search syns syn-low syn-high)   ;; (vectorof Synapse) Synapse Synapse -> Synapse|#f
+  (let search ((left 0) (right (fx- (vector-length syns) 1)))
+    (if (fx>? left right) #f
+      (let* ( (mid (fxdiv (fx+ left right) 2))
+              (synapse (vector-ref syns mid))) 
+        (cond 
+          [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
+          [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
+          [else synapse])))))
+                                                                                            ;
+  ;; List comprehensions from the Programming Praxis standard prelude
+  ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)
+  ;;   (var range [first] past [step]) — Bind var to first, first + step, ...
+  ;;   (var in list)                   — Loop over elements of list
+  ;;   (var is expr)                   — Bind var to value of expr
+  ;;   (pred? expr)                    — Include elements for which (pred? x) is non-#f.
+                                                                                            ;
+(define-syntax fold-of                   ;; Op Base Expr Clause ...
+  (syntax-rules (range in is)
+    ((_ "z" f b e) (set! b (f b e)))
+    ((_ "z" f b e (v range fst pst stp) c ...)
+      (let* ((x fst) (p pst) (s stp)
+             (le? (if (positive? s) <= >=)))
+        (do ((v x (+ v s))) ((le? p v) b)
+          (fold-of "z" f b e c ...))))
+    ((_ "z" f b e (v range fst pst) c ...)
+      (let* ((x fst) (p pst) (s (if (< x p) 1 -1)))
+        (fold-of "z" f b e (v range x p s) c ...)))
+    ((_ "z" f b e (v range pst) c ...)
+      (fold-of "z" f b e (v range 0 pst) c ...))
+    ((_ "z" f b e (x in xs) c ...)
+      (do ((t xs (cdr t))) ((null? t) b)
+        (let ((x (car t)))
+          (fold-of "z" f b e c ...))))
+    ((_ "z" f b e (x is y) c ...)
+      (let ((x y)) (fold-of "z" f b e c ...)))
+    ((_ "z" f b e p? c ...)
+      (if p? (fold-of "z" f b e c ...)))
+    ((_ f i e c ...)
+      (let ((b i)) (fold-of "z" f b e c ...)))))
+                                                                                            ;
+(define-syntax list-of (syntax-rules ()  ;; Expr Clause ...
+  ((_ arg ...) (reverse (fold-of
+    (lambda (d a) (cons a d)) '() arg ...)))))
+                                                                                            ;
+(define-syntax sum-of (syntax-rules ()   ;; Expr Clause ...
+  ((_ arg ...) (fold-of + 0 arg ...))))
+                                                                                            ;
 (define-syntax define-memoized           ;; Function-defn -> defn with arg/result cache
   (syntax-rules ()
     ((define-memoized (f arg ...) body ...)
@@ -261,4 +367,61 @@
                           (set! cache (cons (cons `(,arg ...) val) cache))
                           val)))))))))
 
+;; -- Smoke tests --
+                                                                                            ;
+(define-syntax expect                    ;; ((X ... -> Y) X ...) Y -> [error]
+  ;; check that function application(s) to arguments match expected values
+  (lambda (x)                            
+    (syntax-case x ()                    ;; [expect ([fn args] expected ) ... ]
+      [ (_ (expr expected) ...)          ;; expr matches [fn args]
+        #'(begin 
+            (let ((result expr))         ;; eval expr just once, no output if check passes
+              (unless (equal? result expected)
+                (for-each display 
+                  `("**" expr #\newline 
+                    "  expected: " expected #\newline 
+                    "  returned: " ,result  #\newline))
+                (exit))) ...)])))
+                                                                                            ;
+  [expect ( [list-average (list 1 2 27)]  10 )]
+  [expect ( [build-list 3 -] '(0 -1 -2) )]
+  [expect ( [take 2 '(a 2 c)] '(a 2) )]
+  [expect ( [make-list 0 9] '()      )
+          ( [make-list 3 9] '(9 9 9) )]
+  [expect ( [list->bitwise '(0 2 3)] #b1101 )]
+  [expect ( [int<- 2.500000000000001] 3 )
+          ( [int<- 5/2              ] 2 )
+          ( [int<- 7/2              ] 4 )]
+  [expect ( [build-vector 3 id] '#(0 1 2) )]
+  [expect ( [vector-filter even? '#(1 2 3 4 5)] '#(2 4) )]
+  [expect ( [vector-map-x (lambda (x y i) (+ x y i)) '#(10 11 12) '#(1 1 1)] '#(11 13 15) )]
+  [expect ( [vector-fold-left (lambda (l x) (cons x l)) '() '#(0 1 2)] '(2 1 0) )]
+  [expect ( [vector-fold-left (lambda (s x y) (* s (+ x y))) 1 '#(0 1 2) '#(1 2 3)] 15 )]
+  [expect ( [vector-average '#(1 2 5)] 8/3 )]
+  [expect ( [fxvector-max '#(0 -3 7 5)] 7 )]
+  [expect ( [fx10k<- '#(1/3 1.0)] '#(3333 10000) )]
+  [expect ( [fx10k* 5000 5000] 2500 )]
+  [expect ( [vector-take 0 '#(0 1 2 3)] '#()       )
+          ( [vector-take 2 '#(0 1 2 3)] '#(0 1)    )
+          ( [vector-take 5 '#(0 1 2 3)] '#(0 1 2 3))]
+  [expect ( [vector-count zero? '#(0 1 2 0 3)] 2 )
+          ( [vector-count not   '#(#t 0 add1)] 0 )]
+  [expect ( [vector-indices '#(#f #f #f)] '()    )
+          ( [vector-indices '#(#t #f  0)] '(2 0) )]
+  [expect ( [vector-refs '#(0 11 22 33 44) '#(0 2 4)] '#(0 22 44) )]
+  [expect ( [bitwise-span #b01011101000] 7 )]
+  [let* ( (source (build-vector 100 id))
+          (select (vector->list [vector-sample source 50] )))
+    (expect ( (length select) 50 )
+            ( (list? (for-all memq select (make-list 50 (vector->list source)))) #t )  ;; all from source
+            ( (map (lambda (x) (length (remq x select))) select) (make-list 50 49)) )] ;; all different
+  [expect ( [(lambda (x . args)          ;; example fn with kws k1 & k2: default is (x 1 2)
+              (append (list x) [key-word-args args '([k1 . 1] [k2 . 2])] ))  ;; end of fn defn
+            99 '[k2 . 22] '[k1 . 11] #;'[k3 . 33] ] '(99 11 22) )]  ;; apply fn to 99 '[k2 ...
+  [expect ( [intersect1d     '(1 2 3 4) '(1 3 5)] '(1 3) )]
+  [expect ( [setdiff1d       '(1 2 3 4) '(1 3 5)] '(2 4) )]
+  [expect ( [in1d            '(1 2 3 4) '(1 3 5)]  #b101 )]
+  [expect ( [include-by-mask '(1 2 3 4)  #b1101]  '(1 3 4))]
+  [expect ( [exclude-by-mask '(1 2 3 4)  #b1101]  '(2))]
+  
 )
