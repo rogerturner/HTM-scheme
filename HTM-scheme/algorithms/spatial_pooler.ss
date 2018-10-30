@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; ========= HTM-scheme Spatial Pooler Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
@@ -21,11 +23,7 @@
   ;; Max 2 dimensions, no wraparound, no parameter consistency checking.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-#!chezscheme
-                                                                                            ;
-(optimize-level 3)
-                                                                                            ;
-(library (spatial_pooler)
+(library (HTM-scheme HTM-scheme algorithms spatial_pooler)
                                                                                             ;
 (export
   perm<-
@@ -36,7 +34,7 @@
                                                                                             ;
 (import 
   (rnrs)                   ;; use (except (chezscheme) add1 make-list random) for load-program
-  (htm_prelude))
+  (HTM-scheme HTM-scheme algorithms htm_prelude))
     
 ;; -- Spatial Pooler Types --
                                                                                             ;
@@ -458,7 +456,7 @@
                                                                                             ;
 (define (boost-factors-local sp)         ;; SP -> (ColVecOf BoostFactor)
   ;; produce boost factors for all columns from local target density
-  (vector-map-indexed
+  (vector-map-x
     (lambda (adc cx)                     ;; DutyCycle ColumnX -> BoostFactor
       (let* ( (mask-neighbors (neighborhood cx (sp-inhibition-radius sp) (sp-column-dimensions sp)))
               (target-density (/ (vector-average (vector-refs (sp-active-duty-cycles sp) mask-neighbors)) 10000.)))
@@ -506,7 +504,7 @@
 (define (tied-overlaps overlaps this-ov) ;; (vectorof OverlapX) (OverlapX) -> (vectorof ColumnX)
   ;; produce indices in neighborhood for overlaps with same count as this-ov
   (vector-filter id
-    (vector-map-indexed
+    (vector-map-x
       (lambda (ov cx)
         (if (= (count ov) (count this-ov)) cx #f))
       overlaps)))

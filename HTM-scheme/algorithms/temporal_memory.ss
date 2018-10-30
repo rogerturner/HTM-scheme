@@ -171,7 +171,7 @@
                               [pre-index                   . ,(make-vector num-cells '())]
                               [seg-index                   . ,(make-vector num-columns)])
                             kwargs)
-                          tm-defaults #f))))))))
+                          tm-defaults))))))))
                                                                                             ;
 (define tm-defaults                      ;; (listof KWarg)
   `(
@@ -479,15 +479,16 @@
             (let* ( (synapse (synapses-ref synapses sx))
                     (prex    (syn-prex synapse))
                     (permanence
-                      (let search ((left 0) (right input-right))               ;; 20. else synapse.permanence -= PERMANENCE_DECREMENT
-                        (if (fx>? left right)
+                      ;; binary search for index of presynaptic cell in active-input
+                      (let search ((left 0) (right input-right))
+                        (if (fx>? left right)                                  ;; 20. else synapse.permanence -= PERMANENCE_DECREMENT
                           (clip-min (fx- (syn-perm synapse) permanence-decrement))
                           (let ((mid (fxdiv (fx+ left right) 2)))
                             (cond                                              ;; 17. if synapse.presynapticCell in activeCells(t-1) then
-                              [ (fx>? prex (vector-ref active-input mid)) 
-                                  (search (add1 mid) right) ]
                               [ (fx<? prex (vector-ref active-input mid)) 
                                   (search left (fx- mid 1)) ]
+                              [ (fx<? (vector-ref active-input mid) prex) 
+                                  (search (add1 mid) right) ]
                               [ else (increment-proc (syn-perm synapse))])))))) ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
               (if (zero? permanence)
                   ;; build synapses-to-destroy indices as sorted list
@@ -531,56 +532,52 @@
 (define (compute-activity                ;; TM (vectorof CellX) (CellVecOf {FlatX}) -> {Segment} {Segment} (vectorof Nat)
           tm active-presynaptic-cells pre-index reduced-threshold reduced-threshold-cells)
   ;; produce segments with connected/potential synapses, and counts, for active cells
-  (let* ( (napsfs (make-vector (tm-next-flatx tm) 0))  ;; "num-active-potential-synapses-for-segment"
-          (nacsfs (make-vector (tm-next-flatx tm) 0))  ;; "num-active-connected-synapses-for-segment"
-          (threshold (tm-connected-permanence tm))
-          (segments  (tm-seg-index tm))
-          (actsegs   '())
-          (potsegs   '())
-          (actthresh (tm-activation-threshold tm))
-          (potthresh (tm-min-threshold tm))
-          (update-actsegs
-            (lambda (segx synapse)
-              (when (fx>=? (syn-perm synapse) threshold)                       ;; 60. if synapse.permanence ≥ CONNECTED_PERMANENCE then
-                (let ((segment (vector-ref segments segx))
-                      (new-nacsfs (add1 (vector-ref nacsfs segx))))
-                  (if (null? reduced-threshold-cells)
-                    (begin
-                      (when (fx=? new-nacsfs actthresh)                        ;; 61.   numActiveConnected += 1
-                        (unless (memq segment actsegs)
-                          (set! actsegs (cons segment actsegs))))
-                      (vector-set! nacsfs segx new-nacsfs))
-                    (begin
-                      (when (or (and (fx=? new-nacsfs reduced-threshold)
-                                     (memv (seg-cellx segment) reduced-threshold-cells))
-                                (fx=? new-nacsfs actthresh))
-                        (unless (memq segment actsegs)
-                          (set! actsegs (cons segment actsegs))))
-                      (vector-set! nacsfs segx new-nacsfs)))))))
-          (update-segs    
-            (lambda (segx syn-low syn-high)
-              (let ((synapses (seg-synapses (vector-ref segments segx))))
-                (let search ((left 0) (right (fx- (synapses-length synapses) 1)))
-                  (unless (fx>? left right)
-                    (let* ( (mid (fxdiv (fx+ left right) 2))
-                            (synapse (synapses-ref synapses mid))) 
-                      (cond 
-                        [ (fx>? syn-low  synapse) (search (add1 mid) right) ]
-                        [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
-                        [ else                                                 ;; 63. if synapse.permanence ≥ 0 then
-                          (let ((new-napsfs (add1 (vector-ref napsfs segx))))
-                            (when (fx=? new-napsfs potthresh)
-                              (unless (memq (vector-ref segments segx) potsegs)
-                                (set! potsegs (cons (vector-ref segments segx) potsegs))))
-                            (vector-set! napsfs segx new-napsfs))              ;; 64.   numActivePotential += 1
-                          (update-actsegs segx synapse) ]))))))))
+  (let* (
+    (napsfs    (make-vector (tm-next-flatx tm) 0))    ;; "num-active-potential-synapses-for-segment"
+    (nacsfs    (make-vector (tm-next-flatx tm) 0))    ;; "num-active-connected-synapses-for-segment"
+    (threshold (tm-connected-permanence tm))
+    (segments  (tm-seg-index tm))
+    (actsegs   '())
+    (potsegs   '())
+    (actthresh (tm-activation-threshold tm))
+    (potthresh (tm-min-threshold tm)))
+    (define (update-actsegs segx synapse)
+      (when (fx>=? (syn-perm synapse) threshold)                               ;; 60. if synapse.permanence ≥ CONNECTED_PERMANENCE then
+        (let ((segment    (vector-ref segments segx))
+              (new-nacsfs (add1 (vector-ref nacsfs segx))))
+          (if (null? reduced-threshold-cells)
+              (when (fx=? new-nacsfs actthresh)                                ;; 61.   numActiveConnected += 1
+                (unless (memq segment actsegs)
+                  (set! actsegs (cons segment actsegs))))
+              (when (or (and (fx=? new-nacsfs reduced-threshold)
+                             (memv (seg-cellx segment) reduced-threshold-cells))
+                        (fx=? new-nacsfs actthresh))
+                (unless (memq segment actsegs)
+                  (set! actsegs (cons segment actsegs)))))
+          (vector-set! nacsfs segx new-nacsfs))))
+    (define (update-potsegs segx syn-low syn-high)
+      (let ((synapses (seg-synapses (vector-ref segments segx))))
+        (let search ((left 0) (right (fx- (synapses-length synapses) 1)))
+          (unless (fx>? left right)
+            (let* ( (mid (fxdiv (fx+ left right) 2))
+                    (synapse (synapses-ref synapses mid))) 
+              (cond 
+                [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
+                [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
+                [ else                                                         ;; 63. if synapse.permanence ≥ 0 then
+                  (let ((new-napsfs (add1 (vector-ref napsfs segx))))
+                    (when (fx=? new-napsfs potthresh)
+                      (unless (memq (vector-ref segments segx) potsegs)
+                        (set! potsegs (cons (vector-ref segments segx) potsegs))))
+                    (vector-set! napsfs segx new-napsfs))                      ;; 64.   numActivePotential += 1
+                  (update-actsegs segx synapse) ]))))))
     (vector-for-each                                                           ;; 59. if synapse.presynapticCell in activeCells(t) then
       (lambda (cellx)
-        (let* ((syn-low  (+ (* cellx x10k) (least-fixnum)))
-               (syn-high (fx+ syn-low (fx- x10k 1))))
+        (let* ((syn-low  (make-synapse cellx %min-perm%))
+               (syn-high (fx+ syn-low %max-perm%)))
           (for-each                                                            ;; 55. for segment in segments
             (lambda (segx)
-              (update-segs segx syn-low syn-high))
+              (update-potsegs segx syn-low syn-high))
             (vector-ref pre-index cellx))))
       active-presynaptic-cells)
     (values actsegs potsegs napsfs)))
@@ -655,14 +652,16 @@
                                                                                             ;
 ;; --- Synapses ---
                                                                                             ;
-(define (make-synapse prex perm)         ;; PreX Permanence -> Synapse
-  (+ (* prex x10k) (least-fixnum) perm))
+(define %syn-least% (least-fixnum))
+                                                                                            ;
+(define (make-synapse prex perm)         ;; PreX Perm -> Synapse
+  (+ (* prex x10k) %syn-least% perm))
                                                                                             ;
 (define (syn-prex synapse)               ;; Synapse -> PreX
-  (div (- synapse (least-fixnum)) x10k))
+  (div (- synapse %syn-least%) x10k))
                                                                                             ;
-(define (syn-perm synapse)               ;; Synapse -> Permanence
-  (mod (- synapse (least-fixnum)) x10k))
+(define (syn-perm synapse)               ;; Synapse -> Perm
+  (mod (- synapse %syn-least%) x10k))
                                                                                             ;
   (define synapses:       vector)
   (define make-synapses   make-vector)
@@ -679,14 +678,14 @@
                                                                                             ;
 (define (in-synapses? cellx synapses)    ;; CellX (vectorof Synapse) -> Boolean
   ;; produce whether cellx equals any pre-synaptic-cell index of synapses
-  (let* ((syn-low  (+ (* cellx x10k) (least-fixnum)))
-         (syn-high (fx+ syn-low x10k)))
-    (let loop ((left 0) (right (fx- (synapses-length synapses) 1)))
+  (let* ( (syn-low  (make-synapse cellx %min-perm%))
+          (syn-high (fx+ syn-low %max-perm%)))
+    (let search ((left 0) (right (fx- (synapses-length synapses) 1)))
       (if (fx>? left right) #f
         (let ((mid (fxdiv (fx+ left right) 2)))
           (cond 
-            [ (fx>? syn-low  (synapses-ref synapses mid)) (loop (add1 mid) right) ]
-            [ (fx<? syn-high (synapses-ref synapses mid)) (loop left (fx- mid 1)) ]
+            [ (fx<? (synapses-ref synapses mid) syn-low ) (search (add1 mid) right) ]
+            [ (fx<? syn-high (synapses-ref synapses mid)) (search left (fx- mid 1)) ]
             [ else #t]))))))
                                                                                             ;
 (define (prune-synapses synapses omits)  ;; Synapses (listof Nat) -> Synapses
