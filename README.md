@@ -3,7 +3,7 @@
 Scheme translations of some [Numenta](https://numenta.com) [HTM](https://numenta.org) (Hierarchical Temporal Memory) algorithms and experiments.
 
 Translated from Numenta [htmresearch](https://github.com/numenta/htmresearch) and [nupic](https://github.com/numenta/nupic).
-Directory structure, file names, and source organization echo the htmresearch repository; organization of the code by function, and function and variable names, parallel Numenta code where possible: scheme and Numenta python code can be read side-by-side. Algorithms and project computation code are standard R6RS and run with [Chez Scheme](https://github.com/cisco/ChezScheme) without external libraries. Plotting uses [Racket](http://racket-lang.org) packages; an example of output from the combined_sequences experiment is:
+Directory structure, file names, and source organization echo the htmresearch repository; organization of the code by function, and function and variable names, parallel Numenta code where possible: scheme and Numenta python code can be read side-by-side. Algorithms and project computation code are standard R6RS and run with [Chez Scheme](https://github.com/cisco/ChezScheme) without external libraries. Plotting uses [Racket](http://racket-lang.org) packages; example output from the combined_sequences experiment (replicating figure 6 in [Numenta paper](http://dx.doi.org/10.1101/190678)):
 
 
 ![Figure 6](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/combined_sequences/Figure%206.png)

@@ -11,7 +11,7 @@ to movement and which parts are due to external causes, and to learn
 predictive models of both types of causes simultaneously using simple
 learning rules.
 
-### Abstract (From Numenta draft paper)
+### Abstract (From Numenta [draft paper](http://dx.doi.org/10.1101/190678))
 
 There are two fundamental reasons why sensory inputs to the brain change
 over time. Sensory inputs can change due to external factors or they can

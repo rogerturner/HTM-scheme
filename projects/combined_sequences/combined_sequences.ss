@@ -18,6 +18,11 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  ;; Partial replication of experiments reported in Numenta papers 
+  ;; Ahmad S and Hawkins J (2017) "Untangling Sequences: Behavior vs. External Causes"
+  ;; doi: 10.1101/190678, and  
+  ;; Hawkins J, Ahmad S and Cui Y (2017) "A Theory of How Columns in the Neocortex 
+  ;; Enable Learning the Structure of the World" doi: 10.3389/fncir.2017.00081
   ;; Translated from numenta htmresearch/.../combined_sequences.py,
   ;; combined_sequence_network_creation.py, /combined_sequence_experiment.py,
   ;; laminar_network.py, l2_l4_inference.py --
