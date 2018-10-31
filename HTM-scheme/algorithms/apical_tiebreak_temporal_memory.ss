@@ -24,7 +24,6 @@
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
 (library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
-;(library (apical_tiebreak_temporal_memory)
                                                                                             ;
 (export
   tm
@@ -49,22 +48,9 @@
                                                                                             ;
 (import
   (rnrs)
-  (except (HTM-scheme HTM-scheme algorithms htm_prelude) add1 search)
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept))
   
-(define (add1 n)                         ;; Fixnum -> Fixnum
-  (fx+ 1 n))
-                                                                                            ;
-(define (search synapses syn-low syn-high)
-  (let search ((left 0) (right (fx- (vector-length synapses) 1)))
-    (if (fx>? left right) #f
-      (let* ( (mid (fxdiv (fx+ left right) 2))
-              (synapse (vector-ref synapses mid))) 
-        (cond 
-          [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
-          [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
-          [else synapse])))))
-
 ;; === Temporal Memory Types ===
                                                                                             ;
 ;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types

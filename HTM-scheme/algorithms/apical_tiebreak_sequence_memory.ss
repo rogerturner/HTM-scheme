@@ -40,8 +40,8 @@
                                                                                             ;
 (import 
   (rnrs)
-  (HTM-scheme HTM-scheme algorithms htm_prelude)
-  (HTM-scheme HTM-scheme algorithms htm_concept)
+          (HTM-scheme HTM-scheme algorithms htm_prelude)
+          (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))
                                                                                             ;
 (define-record-type tm                   ;; TM
