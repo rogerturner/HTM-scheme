@@ -1,4 +1,4 @@
-#!r6rs
+ #!r6rs
 
 ;; === HTM-scheme Column Pooler Copyright 2018 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -79,7 +79,7 @@
     use-inertia
     max-sdr-sparsity
     (mutable prev-active-cells)
-    (mutable inferred-cells))            ;; {SDRX}
+    (mutable first-object))
   (protocol
     (lambda (new)
       (lambda (kwargs)                   ;; (listof KWarg) -> CP
@@ -123,7 +123,7 @@
     [use-inertia                    . #t]
     [max-sdr-sparsity               . 10]
     [prev-active-cells              . ()]
-    [inferred-cells                 . ()] ))
+    [first-object                   . #t] ))
 
 ;; === Synapses and Permanences ===
                                                                                             ;
@@ -325,6 +325,9 @@
   ;; in learning mode, maintain prior activity or create random sdr for new object
   (define (new-sdr)                    ;; -> SDR
     ;; produce random sdr with exactly sdr-size bits
+    (when (cp-first-object cp)
+      (random-seed! 7)
+      (cp-first-object-set! cp #f))
     (let loop [(n 0) (xs (list))]
       (cond [(fx=? n (cp-sdr-size cp)) (list-sort fx<? xs)]
             [else
@@ -443,8 +446,7 @@
               (let ((selected (vector->list (vector-sample (list->vector rem-ff-cells) n))))
                 (set! chosen-cells (append chosen-cells selected)))
               (set! chosen-cells (append chosen-cells rem-ff-cells))))))
-      (cp-active-cells-set! cp (list-sort fx<? chosen-cells))
-      (cp-inferred-cells-set! cp (cp-active-cells cp)))))
+      (cp-active-cells-set! cp (unique eqv? (list-sort fx<? chosen-cells))))))
                                                                                             ;
 (define (num-connected-proximal-synapses ;; CP {CellX} -> Nat
           cp cells)

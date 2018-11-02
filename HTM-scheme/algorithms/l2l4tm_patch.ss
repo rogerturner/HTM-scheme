@@ -1,3 +1,5 @@
+#!chezscheme
+
 ;; === HTM-scheme L2L4TM Copyright 2018 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; This program is free software: you can redistribute it and/or modify  ;;
@@ -24,8 +26,7 @@
   reset)
                                                                                             ;
 (import
-  ;(rnrs)
-  (except (chezscheme) random add1 make-list reset)
+  (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_pair_memory) atpm:)
@@ -126,8 +127,13 @@
 (define (compute patch features locations learn)
   ;; run one time step of a patch with multiple cortical columns; interaction between
   ;; cols is only L2 lateral inputs which are buffered, so can run cols in any order
-    (vector-for-each                     ;; each cc
-      (lambda (L2 L4 TM feature location)
+  (let ((num-columns (vector-length features))
+        (columnx (make-thread-parameter 0))
+        (mutex   (make-mutex))
+        (finished (make-condition))
+        (done     0))
+    (define (column-thread)                     ;; each cc
+      (define (compute-column L2 L4 TM feature location)
         (atpm:compute L4
           feature                        ;; feedforward
           location                       ;; basal input
@@ -151,7 +157,21 @@
         (atsm:compute TM
           feature                        ;; feedforward
           learn))
-      (patch-L2s patch) (patch-L4s patch) (patch-TMs patch) features locations))
+      (compute-column
+        (vector-ref (patch-L2s patch) (columnx))
+        (vector-ref (patch-L4s patch) (columnx))
+        (vector-ref (patch-TMs patch) (columnx))
+        (vector-ref features  (columnx))
+        (vector-ref locations (columnx)))
+      (with-mutex mutex
+        (set! done (add1 done))
+        (when (= done num-columns)
+          (condition-signal finished))))
+    (do ((threadx 0 (add1 threadx))) ((= threadx num-columns))
+      (columnx threadx)
+      (fork-thread column-thread))
+    (with-mutex mutex
+      (condition-wait finished mutex))))
                                                                                             ;
 (define (reset patch)
   (vector-for-each

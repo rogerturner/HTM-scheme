@@ -29,8 +29,9 @@
   unique
   int<-
   id
-  build-vector 
+  build-vector
   vector-filter
+  indexes
   vector-map-x
   vector-for-each-x
   vector-fold-left
@@ -117,10 +118,16 @@
   ;; produce vector of elements of vec for which (pred elt) is not false
   (list->vector (filter pred (vector->list vec))))
                                                                                             ;
+(define (indexes seq)                    ;; (vectorof X) -> (vectorof Nat)                                                                 
+  ;; produce indexes of vector or list   ;; (listof X)   -> (listof Nat)
+  (if (vector? seq)
+      (build-vector (vector-length seq) id)
+      (build-list   (length seq)        id)))
+                                                                                            ;
 (define (with-index folder f vs)         ;; ((? -> ?) ?... -> ?) (?... -> ?) (listof (vectorof ?)) -> ?
   (apply folder
     (lambda xs (apply f xs))
-    (append vs (list (build-vector (vector-length (car vs)) id)))))
+    (append vs (list (indexes (car vs))))))
                                                                                             ;
 (define (vector-map-x f . vs)            ;; (X ... Nat -> Y) (vectorof X) ... -> (vectorof Y)
   ;; produce vector by applying f to each element of vs and its index
@@ -394,6 +401,8 @@
           ( [int<- 7/2              ] 4 )]
   [expect ( [build-vector 3 id] '#(0 1 2) )]
   [expect ( [vector-filter even? '#(1 2 3 4 5)] '#(2 4) )]
+  [expect ( [indexes '(1 2 3)]  '(0 1 2)  )]
+  [expect ( [indexes '#(1 2 3)] '#(0 1 2) )]
   [expect ( [vector-map-x (lambda (x y i) (+ x y i)) '#(10 11 12) '#(1 1 1)] '#(11 13 15) )]
   [expect ( [vector-fold-left (lambda (l x) (cons x l)) '() '#(0 1 2)] '(2 1 0) )]
   [expect ( [vector-fold-left (lambda (s x y) (* s (+ x y))) 1 '#(0 1 2) '#(1 2 3)] 15 )]

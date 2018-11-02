@@ -1,4 +1,4 @@
-#!r6rs
+#!chezscheme
 
 ;; === HTM-scheme/projects/combined_sequences Copyright 2018 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -30,7 +30,7 @@
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
 (import
-  (rnrs)
+  (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms l2l4tm_patch) l2l4tm:)
@@ -135,7 +135,7 @@
                           (list-sort fx<? (vector->list 
                             (vector-sample (build-vector input-size id) num-input-bits)))))
       (generate-pool    (lambda (n) 
-                          (build-vector (* n num-cortical-columns) generate-pattern)))
+                          (build-vector (* n 3 #;num-cortical-columns) generate-pattern)))
       (feature-pool     (generate-pool num-features))
       (location-pool    (generate-pool num-locations))
       (sequence-experiences
@@ -221,32 +221,33 @@
           (vector-map cells (layer patch))))
       (map (lambda (key)
         (case key
-          ['L4lpa (lengths atpm:get-predicted-active-cells l2l4tm:patch-L4s)]
-          ['TMlnp (lengths atsm:get-next-predicted-cells   l2l4tm:patch-TMs)]
-          ['TMlpa (lengths atpm:get-predicted-active-cells l2l4tm:patch-TMs)]
-          ['L2la  (lengths cp:get-active-cells l2l4tm:patch-L2s)]))        
+          [(L4lpa) (lengths atpm:get-predicted-active-cells l2l4tm:patch-L4s)]
+          [(TMlnp) (lengths atsm:get-next-predicted-cells   l2l4tm:patch-TMs)]
+          [(TMlpa) (lengths atpm:get-predicted-active-cells l2l4tm:patch-TMs)]
+          [(L2a)   (list->vector (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 0)))]      
+          [(L2la)  (lengths cp:get-active-cells l2l4tm:patch-L2s)]))       
         keys))
                                                                                             ;
 #;> (define (infer-all om stats)         ;; OM Stats
-      (for-each (lambda (ex)
+      (vector-for-each (lambda (ex)
         (infer om ex (lambda (sx)
           (vector-set! stats ex (append (vector-ref stats ex)
                                         (list (get-stats-for stats-keys om ex sx)))))))
-        (build-list (vector-length (om-experiences om)) id)))
+        (indexes (om-experiences om))))
                                                                                             ;
 ;; Training:
     (case figure
-      [("S" "6" "7") 
+      [(A6)
         (train-superimposed objects sequences)]
-      [("H3b" "H3c")
-        (train-all objects 7)]           ;; for HAC2017 figures
+      [(H3b H3c)
+        (train-all objects 5)]           ;; for HAC2017 figures
       [else
         (train-all objects num-repetitions)
-        (train-all sequences num-repetitions #;(* 3 seq-length))])
+        (train-all sequences num-repetitions)])
 ;; Inference:
     (let ((stats (make-vector 50 '())))
       (case figure
-        [("6")
+        [(A6)
           (let ((objectxs (vector-sample (build-vector num-objects id) 8)))
           (for-each
             (lambda (item-type ex)
@@ -258,50 +259,69 @@
                     (append (vector-ref stats 0)
                             (list (get-stats-for stats-keys #f ex sx)))))))
             '(seq obj seq obj seq seq obj seq) (build-list 8 id)))]
-        [("H3b" "H3c")
+        [(H3b H3c)
           (infer-all objects   stats)]
         [else
           (infer-all objects   stats)
           (infer-all sequences stats)])
 ;; Results:
-    (let ((mean (lambda (x) (if (string=? figure "6")  x
+    (let ((mean (lambda (x) (if (eq? figure 'A6)  x
                    (int<- (/ x (+ num-objects num-sequences)))))))
-    ;; stats :: (ExpVectorOf (SensListOf (KeyListOf (CCVectorOf Number))))
-    (vector-for-each-x                   ;; for each experience
-      (lambda (exp-stats ex)
-        (unless (null? exp-stats)
-          (for-each display (list "\n" ex ": " 
-            (if (> num-cortical-columns 1)
-              (if (= (length stats-keys) 1)  exp-stats
-                (list (car exp-stats) "..." (car (reverse exp-stats))))
-              (map (lambda (sens-stats)
-                      (map (lambda (v) (vector-ref v 0)) sens-stats))
-                exp-stats))))))
-      stats)
+    (case figure
+      [(H3b H3c) #f]
+      [else
+        ;; stats :: (ExpVectorOf (SensListOf (KeyListOf (CCVectorOf Number))))
+        (vector-for-each-x                   ;; for each experience
+          (lambda (exp-stats ex)
+            (unless (null? exp-stats)
+              (for-each display (list "\n" ex ": " 
+                (if (> num-cortical-columns 1)
+                  (if (= (length stats-keys) 1)  exp-stats
+                    (list (car exp-stats) "..." (car (reverse exp-stats))))
+                  (map (lambda (sens-stats)
+                          (map (lambda (v) (vector-ref v 0)) sens-stats))
+                    exp-stats))))))
+          stats)])
     (let ((summary-file "HTM-scheme/projects/combined_sequences/combined_sequences.data"))
       (when (file-exists? summary-file) (delete-file summary-file))
       (with-output-to-file summary-file (lambda ()
-        (for-each display [list "\n((\"figure\" \"" figure "\")"])
-        (for-each                                ;; ..stats key
-          (lambda (key kx)                       ;; Symbol Nat ->
-            (for-each display [list "\n(\"" (symbol->string key) "\" "
-              (map mean
-                (vector-fold-left                ;; ..over experiences
-                  (lambda (accs exp-stats)       ;; (listof Number) (SensListOf (KeyListOf (vectorof Number)))
-                    (if (null? exp-stats)  accs
-                      (map                       ;; ..each sensation
-                        (lambda (ac sens-stats)  ;; Number (listof (vectorof Number)) -> Number
-                          (+ ac (vector-average (list-ref sens-stats kx))))
-                        accs exp-stats)))        ;; -> (listof Number)
-                  (make-list (length (vector-ref stats 0)) 0)
-                  stats))
-              ")"]))
-          stats-keys (build-list (length stats-keys) id))
-        (display ")\n"))))))))
+        (write [cons [list "figure" (symbol->string figure)]
+          (case figure
+            [(H3b H3c)
+              (let ((first-object (apply append (vector-ref stats 0))))
+                [cons [list "L2a"
+                        (fold-left (lambda (acc v)
+                            (list->vector (union1d (vector->list acc) (vector->list v))))
+                          (car first-object)
+                          (cdr first-object))]
+                [list [list "L2ac" (vector-filter positive?
+                  (fold-left (lambda (acc v)
+                      (vector-for-each (lambda (x)
+                          (vector-set! acc x (add1 (vector-ref acc x))))
+                        v)
+                      acc)
+                    (make-vector (cp:number-of-cells (vector-ref (l2l4tm:patch-L2s patch) 0)) 0)
+                    first-object)) ] ] ] )]
+            [else
+              (map                                     ;; each stats key
+                (lambda (key kx)                       ;; Symbol Nat ->
+                  [cons (symbol->string key)
+                    [list (map mean                    ;; average
+                      (vector-fold-left                ;; ..over experiences
+                        (lambda (accs exp-stats)       ;; (listof Number) (SensListOf (KeyListOf (vectorof Number)))
+                          (if (null? exp-stats)  accs
+                            (map                       ;; ..each sensation, average columns
+                              (lambda (ac sens-stats)  ;; Number (listof (vectorof Number)) -> Number
+                                (+ ac (vector-average (list-ref sens-stats kx))))
+                              accs exp-stats)))        ;; -> (listof Number)
+                        (make-list (length (vector-ref stats 0)) 0)
+                        stats)) ] ] )
+                stats-keys (indexes stats-keys))])
+             ] ))))))))
 
 (define (run-experiment-4a)
   (run-experiment `(
-    [figure          . "4a"]
+    [figure          .  A4a]
     [num-sequences   .   50]
     [seq-length      .   10]
     [num-features    .  100]
@@ -315,7 +335,7 @@
                                                                                             ;
 (define (run-experiment-5a)
   (run-experiment `(
-    [figure               . "5a"]
+    [figure               .  A5a]
     [num-sequences        .    0]
     [seq-length           .   10]
     [num-features         .  100]
@@ -328,7 +348,7 @@
                                                                                             ;
 (define (run-experiment-6)
   (run-experiment `(
-    [figure          . "6"]
+    [figure          .  A6]
     [num-sequences   .  50]
     [seq-length      .  10]
     [num-objects     .  50]
@@ -341,9 +361,9 @@
     [stats-keys      . (L4lpa TMlpa)]
     )))
                                                                                             ;
-(define (run-experiment-HAC2017-3b)
+(define (run-experiment-H3b)
   (run-experiment `(
-    [figure              . "H3b"]
+    [figure              . H3b]
     [num-cortical-columns .  1]
     [num-features         .  3]
     [num-points           . 10]
@@ -357,12 +377,12 @@
     [num-sequences        .  0]
     [num-learning-points  .  3]
     [settling-time        .  2]
-    [stats-keys           . (L2la)]
+    [stats-keys           . (L2a)]
     )))
                                                                                             ;
-(define (run-experiment-HAC2017-3c)
+(define (run-experiment-H3c)
   (run-experiment `(
-    [figure              . "H3c"]
+    [figure              . H3c]
     [num-cortical-columns .  3]
     [num-features         .  3]
     [num-points           . 10]
@@ -376,6 +396,6 @@
     [num-sequences        .  0]
     [num-learning-points  .  3]
     [settling-time        .  3]
-    [stats-keys           . (L2la)]
+    [stats-keys           . (L2a)]
     )))
                                                                                             ;
