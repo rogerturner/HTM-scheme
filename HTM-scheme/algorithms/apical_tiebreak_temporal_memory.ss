@@ -28,9 +28,13 @@
 (export
   tm
   make-tm
+  tm-column-count
+  tm-cells-per-column
+  tm-basal-input-size-set!
   reset
   activate-cells
   depolarize-cells
+  number-of-cells
   get-active-cells
   get-predicted-active-cells
   get-winner-cells
@@ -39,11 +43,11 @@
   get-active-basal-segments
   get-active-apical-segments
   (rename                                ;; for temporal_memory_test
-    (create-segment       attm:create-segment)
-    (tm-basal-connections attm:tm-basal-connections)
-    (grow-synapses        attm:grow-synapses)
-    (tm-basal-pre-index   attm:tm-basal-pre-index)
-    (tm-next-flatx        attm:tm-next-flatx)
+    (create-segment       test:create-segment)
+    (tm-basal-connections test:tm-basal-connections)
+    (grow-synapses        test:grow-synapses)
+    (tm-basal-pre-index   test:tm-basal-pre-index)
+    (tm-next-flatx        test:tm-next-flatx)
     ))
                                                                                             ;
 (import
@@ -75,7 +79,7 @@
 (define-record-type tm                   ;; TM
   (fields
     column-count                         ;; Nat  The number of minicolumns
-    basal-input-size                     ;; Nat  The number of bits in the basal input
+    (mutable basal-input-size)           ;; Nat  The number of bits in the basal input
     apical-input-size                    ;; Nat  The number of bits in the apical input
     cells-per-column                     ;; Nat 
     activation-threshold                 ;; Nat
@@ -117,7 +121,7 @@
           (tm-basal-connections-set!  tm (make-vector num-cells '()))
           (tm-apical-connections-set! tm (make-vector num-cells '()))
           (tm-basal-pre-index-set!    tm (make-vector num-cells '()))
-          (tm-apical-pre-index-set!   tm (make-vector num-cells '()))
+          (tm-apical-pre-index-set!   tm (make-vector (tm-apical-input-size tm) '()))
           (tm-seg-index-set!          tm (make-vector (tm-column-count tm)))
           tm)))))
                                                                                             ;
@@ -339,8 +343,7 @@
 (define (calculate-basal-segment-activity  ;; TM (vectorof CellX) (CellVecOf {FlatX}) {CellX} -> {Segment} {Segment} (vectorof Nat)
           tm active-input pre-index reduced-basal-threshold-cells)
   ;; Calculate the active and matching basal segments for this timestep.
-  (compute-activity tm active-input pre-index 
-                    (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
+  (compute-activity tm active-input pre-index (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
                                                                                             ;
 (define (calculate-predicted-cells tm    ;; TM {Segment} {Segment} -> {CellX}
           active-basal-segments active-apical-segments)
@@ -465,6 +468,9 @@
           (list-ref candidate-cells (random (length candidate-cells))))))
     columnxs))
                                                                                             ;
+(define (number-of-cells tm)
+  (* (tm-column-count tm) (tm-cells-per-column tm)))
+                                                                                            ;
 (define (get-active-cells tm)            ;; TM -> {CellX}
   (vector->list (tm-active-cells tm)))
                                                                                             ;
@@ -487,12 +493,12 @@
                                                                                             ;
 ;; --- Connections: see NuPIC connections.py ---
                                                                                             ;
-(define (compute-activity                ;; TM (vectorof CellX) (CellVecOf {FlatX}) -> {Segment} {Segment} (vectorof Nat)
+(define (compute-activity                ;; TM (vectorof CellX) (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (vectorof Nat)
           tm active-presynaptic-cells pre-index reduced-threshold reduced-threshold-cells)
   ;; produce segments with connected/potential synapses, and counts, for active cells
   (let* (
-    (napsfs    (make-vector (tm-next-flatx tm) 0))    ;; "num-active-potential-synapses-for-segment"
-    (nacsfs    (make-vector (tm-next-flatx tm) 0))    ;; "num-active-connected-synapses-for-segment"
+    (napsfs    (make-vector (tm-next-flatx tm) 0)) ;; "num-active-potential-synapses-for-segment"
+    (nacsfs    (make-vector (tm-next-flatx tm) 0)) ;; "num-active-connected-synapses-for-segment"
     (threshold (tm-connected-permanence tm))
     (segments  (tm-seg-index tm))
     (actsegs   '())

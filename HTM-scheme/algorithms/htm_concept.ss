@@ -18,16 +18,18 @@
   ;; Types and data structure concepts for HTM-scheme algorithms:
   ;;   Perm:        Fixnum 0-9999 interpreted as a permanence value 0.0-0.9999
   ;;   Synapse:     Fixnum containing index of presynaptic cell and permanence value
-  ;;   Segment:     vector of Synapse; sorted to facilitate finding pre cell indices
+  ;;   Synapses:    vector of Synapse; sorted to facilitate finding pre cell indices
+  ;;   Segment:     record with Synapses plus management fields
   ;;   Connections: vector of Segment(s) indexed by cell number in Layer
-  ;;   Layer:       record with parameters and Connection data for algorithms 
+  ;;   Layer:       record with algorithm parameters and Connections of layer cells 
   ;;   Macrocolumn: structure of Layers with interconnections
   ;;   Patch:       vector of Macrocolumn with lateral connections
   ;;
   ;; Perm/Synapse/Segment types are intended to minimize space required for synapses.
   ;;
   ;; Algorithms have been translated from numenta /htmresearch/... and /nupic/...
-  ;; using corresponding functions, names, and organization (not idiomatic Scheme);
+  ;; using corresponding functions, names, and organization (not idiomatic Scheme).
+  ;; To review HTM-scheme algorithms view Scheme and corresponding Python side-by-side:
   ;; see comments in Numenta code for descriptions of functions and parameters.
   ;; Libraries generally export plain names: it is expected that using modules will
   ;; prefix or rename when importing. Record type names are short to avoid excessively

@@ -37,21 +37,24 @@
   L2s                                    ;; CColVecOf CP   [column_pooler]
   L4s                                    ;; CColVecOf ATPM [apical_tiebreak_pair_memory]
   TMs                                    ;; CColVecOf ATSM [apical_tiebreak_sequence_memory]
+  (mutable L2-prev-actives)              ;; CColVecOf (listof CellX)
   enable-feedback)                       ;; Boolean
   (protocol
     (lambda (new)
       (lambda (ncc is nib ef L2-overrides L4-overrides TM-overrides)
-          (new
-            (build-vector ncc
-              (lambda _ (cp:make-cp   (append L2-overrides
-                                              (get-default-L2-params is nib)))))
-            (build-vector ncc
-              (lambda _ (atpm:make-tm (append L4-overrides
-                                              (get-default-L4-params is nib)))))
-            (build-vector ncc
-              (lambda _ (atsm:make-tm (append TM-overrides
-                                              (get-default-TM-params is nib)))))
-            ef)))))
+        (let* ( (L2s (build-vector ncc (lambda _ 
+                        (cp:make-cp (append L2-overrides (get-default-L2-params is nib))))))
+                (L4s (build-vector ncc (lambda _ 
+                        (atpm:make-tm (append
+                          `([basal-input-size  . ,is]
+                            [apical-input-size . ,(cp:number-of-cells (vector-ref L2s 0))])
+                          L4-overrides (get-default-L4-params is nib))))))
+                (TMs (build-vector ncc (lambda _ 
+                        (atsm:make-tm (append
+                          `([basal-input-size  . ,is]
+                            [apical-input-size . ,(cp:number-of-cells (vector-ref L2s 0))])
+                          TM-overrides (get-default-TM-params is nib)))))))
+          (new L2s L4s TMs (build-vector ncc (lambda _ '())) ef))))))
 
 (define (get-default-L2-params input-size num-input-bits)
   ;; getDefaultL2Params from l2_l4_inference.py
@@ -125,53 +128,74 @@
       [sample-size                        . ,sample-size])))
                                                                                             ;
 (define (compute patch features locations learn)
-  ;; run one time step of a patch with multiple cortical columns; interaction between
-  ;; cols is only L2 lateral inputs which are buffered, so can run cols in any order
-  (let ((num-columns (vector-length features))
-        (columnx (make-thread-parameter 0))
-        (mutex   (make-mutex))
-        (finished (make-condition))
-        (done     0))
-    (define (column-thread)                     ;; each cc
-      (define (compute-column L2 L4 TM feature location)
-        (atpm:compute L4
-          feature                        ;; feedforward
-          location                       ;; basal input
-          (if (patch-enable-feedback patch)
-            (cp:get-active-cells L2)     ;; apical input
-            '() )
-          location                       ;; basal growth candidates
-          '()                            ;; apical growth candidates
-          learn)
-        (cp:compute L2 
-          (atpm:get-active-cells L4)     ;; feedforward
-          (vector-fold-left              ;; lateral inputs from other cols
-            (lambda (lateral-inputs other-L2)
-              (if (eq? L2 other-L2)  lateral-inputs
-                (cons (cp:get-prev-active-cells other-L2) lateral-inputs)))
-            '()
-            (patch-L2s patch))
-          (atpm:get-predicted-cells L4)  ;; feedforward growth candidates
-          learn
-          '())                           ;; predicted input
-        (atsm:compute TM
-          feature                        ;; feedforward
-          learn))
-      (compute-column
-        (vector-ref (patch-L2s patch) (columnx))
-        (vector-ref (patch-L4s patch) (columnx))
-        (vector-ref (patch-TMs patch) (columnx))
-        (vector-ref features  (columnx))
-        (vector-ref locations (columnx)))
+  ;; run one timestep of a patch with multiple cortical columns
+  (let ((num-columns (vector-length (patch-L2s patch)))
+        (thread-colx (make-thread-parameter #f))
+        (mutex       (make-mutex))
+        (finished    (make-condition))
+        (done        0))
+                                                                                            ;
+#;> (define (compute-L4L2 L4 L2 feature location)
+      (atpm:compute L4
+        feature                        ;; feedforward
+        location                       ;; basal input
+        (if (patch-enable-feedback patch)
+          (cp:get-active-cells L2)     ;; apical input (L2 previous timestep)
+          '())
+        location                       ;; basal growth candidates
+        '()                            ;; apical growth candidates
+        learn)
+      (cp:compute L2 
+        (atpm:get-active-cells L4)     ;; feedforward
+        (reverse (vector-fold-left     ;; lateral inputs from other cols
+          (lambda (lateral-inputs other-L2 other-prev-active)
+            (if (eq? L2 other-L2)  lateral-inputs
+              (cons other-prev-active lateral-inputs)))
+          '()
+          (patch-L2s patch) (patch-L2-prev-actives patch)))
+        (atpm:get-predicted-cells L4)  ;; feedforward growth candidates
+        learn
+        (atpm:get-predicted-cells L4)))                          ;; predicted input
+                                                                                            ;
+#;> (define (L4L2-thread)
+      (compute-L4L2
+        (vector-ref (patch-L4s patch) (thread-colx))
+        (vector-ref (patch-L2s patch) (thread-colx))
+        (vector-ref features  (thread-colx))
+        (vector-ref locations (thread-colx)))
+      (signal-if-all-done))
+                                                                                            ;
+#;> (define (TM-thread)
+      (atsm:compute
+        (vector-ref (patch-TMs patch) (thread-colx))
+        (vector-ref features (thread-colx))
+        learn)
+      (signal-if-all-done))
+                                                                                            ;
+#;> (define (signal-if-all-done)
       (with-mutex mutex
         (set! done (add1 done))
-        (when (= done num-columns)
+        (when (= done (* 2 num-columns))
           (condition-signal finished))))
-    (do ((threadx 0 (add1 threadx))) ((= threadx num-columns))
-      (columnx threadx)
-      (fork-thread column-thread))
-    (with-mutex mutex
-      (condition-wait finished mutex))))
+                                                                                            ;
+    ;; interaction between cols is L2 lateral inputs which are buffered
+    ;; after each timestep, so can run L4+L2/TM for all cols in parallel    
+    (do ((colx 0 (add1 colx))) ((= colx num-columns))
+      (thread-colx colx)
+      (if #t ;single-threaded
+        (begin (L4L2-thread) (TM-thread))
+        (begin
+          (fork-thread L4L2-thread)
+          (fork-thread TM-thread))))
+    (when (< done (* 2 num-columns))
+      (with-mutex mutex
+        (condition-wait finished mutex)))
+    ;; all columns complete (time t), save activity for t+1 lateral input
+    (do ((colx 0 (add1 colx))) ((= colx num-columns))
+      (vector-set! (patch-L2-prev-actives patch) colx
+        (append                          ;; copy list *elements*
+          (cp:get-active-cells (vector-ref (patch-L2s patch) colx))
+          '())))))
                                                                                             ;
 (define (reset patch)
   (vector-for-each
@@ -179,17 +203,8 @@
       (cp:reset   L2)
       (atpm:reset L4)
       (atsm:reset TM))
-    (patch-L2s patch) (patch-L4s patch) (patch-TMs patch)))
-                                                                                            ;
-(define (get-TM-predicted-cols patch)
-  (vector-map
-    (lambda (TM)
-      (map
-        (lambda (cellx) (fxdiv cellx 16))
-        (atsm:get-predicted-cells TM)))
-    (patch-TMs patch)))
-                                                                                            ;
-(define (get-L2-representations patch)   ;; Patch -> (CColVecOf SDR)
-  (vector-map cp:get-active-cells (patch-L2s patch)))
+    (patch-L2s patch) (patch-L4s patch) (patch-TMs patch))
+  (patch-L2-prev-actives-set! patch
+    (build-vector (vector-length (patch-L2s patch)) (lambda _ '()))))
                                                                                             ;
 )

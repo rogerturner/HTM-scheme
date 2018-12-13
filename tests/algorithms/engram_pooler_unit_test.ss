@@ -1,6 +1,6 @@
 #!r6rs
 
-;; === HTM-scheme Column Pooler Unit Test Copyright 2018 Roger Turner. ===
+;; === HTM-scheme Engram Pooler Unit Test Copyright 2018 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2016, Numenta, Inc.                            ;;
@@ -26,14 +26,15 @@
           (rnrs)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
-  (prefix (HTM-scheme HTM-scheme algorithms column_pooler) cp:))
+  (prefix (HTM-scheme HTM-scheme algorithms engram_pooler) cp:))
                                                                                             ;
 (define tests "")
 (define successes 0)
 (define failures  0)
                                                                                             ;
 (define (test name)
-  (set! tests (string-append tests "\n  " name)))
+  (newline) (display name) (set! tests "")
+  #;(set! tests (string-append tests "\n  " name)))
                                                                                             ;
 (define-syntax expect                    ;; ((X ... -> Y) X ...) Y -> [error]
   ;; check that function application(s) to arguments match expected values
@@ -48,15 +49,27 @@
                           "  expected: " ,expected #\newline 
                           "  returned: " ,result  #\newline))
                         (set! failures (add1 failures))
-                        (set! tests "")))) ...)])))
+                        (set! tests "")))) ...)]
+      [ (_ expr ...)
+        #'(begin (if expr
+                    (set! successes (add1 successes))
+                    (begin 
+                      (for-each display `(,tests #\newline "**" expr " failed\n"))
+                      (set! failures (add1 failures))
+                      (set! tests ""))) ...)]
+                      )))
                                                                                             ;
+(define minss 10)
+(define maxss 40)
 (define (initialize-default-pooler . kwargs)
   (cp:make-cp 
     (append
       kwargs
       `(
-        [input-width . ,(* 2048 8)]
-        [cell-count  . 2048]))))
+        [min-sdr-size . ,minss]
+        [max-sdr-size . ,maxss]
+        [input-width  . ,(* 2048 8)]
+        [cell-count   . 4096]))))
                                                                                             ;
 (define (set l)
   (unique = l))
@@ -66,53 +79,73 @@
   (build-list (fx- limit start)
     (lambda (i) (+ start i))))
                                                                                             ;
-(test "Constructor")
+(test "Constructor")                     ;; Create a simple instance and test the constructor
   (let ((pooler (initialize-default-pooler)))
-    (expect [(cp:number-of-cells   pooler)  2048]
+    (expect [(cp:number-of-cells   pooler)  4096]
             [(cp:number-of-inputs  pooler) 16384]
             [(cp:test:number-of-proximal-synapses 
                     pooler (range 0 2048))     0]
             [(cp:test:num-connected-proximal-synapses 
                     pooler (range 0 2048))     0]))
                                                                                             ;
-(test "InitialNullInputLearnMode")
+(test "InitialNullInputLearnMode")       ;; Tests with no input in the beginning
   (let ((pooler (initialize-default-pooler)))
+
+    ;; Should be no active cells in beginning
     (expect [(length (cp:get-active-cells pooler))  0])
+
+    ;; After computing with no input should have active cells
     (cp:compute pooler (list) #t)
     (let ((object-sdr1 (set (cp:get-active-cells pooler))))
-      (expect [(length object-sdr1) 40])
+      (expect [<= minss (length object-sdr1) maxss])
+      
+      ;; Should be no active cells after reset
       (cp:reset pooler)
       (expect [(length (cp:get-active-cells pooler))  0])
+      
+      ;; Computing again with no input should lead to different active cells
       (cp:compute pooler (list) #t)
       (let ((object-sdr2 (set (cp:get-active-cells pooler))))
-        (expect [(length object-sdr2) 40]
-                [(< (length (intersect1d object-sdr1 object-sdr2)) 5) #t]))))
+        (expect [<= minss (length object-sdr2) maxss]
+                [< (length (intersect1d object-sdr1 object-sdr2)) 5]))))
                                                                                             ;
-(test "InitialProximalLearning")
+(test "InitialProximalLearning")         ;; Tests the first few steps of proximal learning
   (let ((pooler (initialize-default-pooler)))
+  
+    ;; Get initial activity
     (cp:compute pooler (range 0 40) #t)
-    (expect [(length (cp:get-active-cells pooler))  40])
-    (let ((object-sdr (set (cp:get-active-cells pooler))))
-      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* 40 20)])
+    (let* ( (object-sdr (set (cp:get-active-cells pooler)))
+            (object-sdr-size (length object-sdr)))
+      (expect [<= minss object-sdr-size maxss])
+
+      ;; Ensure we've added correct number synapses on the active cells
+      ;; Ensure they are all connected
+      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* object-sdr-size 20)])
+
+      ;; As multiple different feedforward inputs come in, the same set of cells should be active
       (cp:compute pooler (range 100 140) #t)
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
-      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* 40 40)])
+      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* object-sdr-size 40)])
+
+      ;; If there is no feedforward input we should still get the same set of active cells
       (cp:compute pooler (list) #t)
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
+
+      ;; In "learn new object mode", given a familiar feedforward input after reset we should not get the same set of active cells
       (cp:reset pooler)
       (cp:compute pooler (range 0 40) #t)
       (expect [(equal? object-sdr (set (cp:get-active-cells pooler))) #f ])
-      (expect [(length (cp:get-active-cells pooler))  40])))
-                                                                                            ;
+      (expect [<= 10 (length (cp:get-active-cells pooler)) 40])))
+#|                                                                                            ;
 (test "InitialInference")
   (let ((pooler (initialize-default-pooler)))
-    (cp:compute pooler (range 0 40) #t)
+    (cp:compute pooler (range 0 40) #t)      ;; Learn one pattern
     (let ((object-sdr (set (cp:get-active-cells pooler))))
-      (cp:compute pooler (range 0 40) #t)
+      (cp:compute pooler (range 0 40) #t)    ;; Form internal distal connections
       (cp:reset pooler)
-      (cp:compute pooler (range 0 40) #f)
+      (cp:compute pooler (range 0 40) #f)    ;; Inferring on same pattern should lead to same result
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
-      (cp:compute pooler (list) #f)
+      (cp:compute pooler (list) #f)          ;; Inferring with no inputs should maintain same pattern
       (expect [(set (cp:get-active-cells pooler)) object-sdr])))
                                                                                             ;
 (test "ShortInferenceSequence")
@@ -174,9 +207,10 @@
         (expect [(cp:test:number-of-proximal-synapses     pooler (list cell)) 20]))
       (cp:get-active-cells pooler))
     )                                                                                        ;
-
+|#
   ;; flush test failures (replace failures with #t to confirm all tests)
   (when #t ;failures
+    (newline)
     (display successes)
     (display " tests passed")
     (display tests)

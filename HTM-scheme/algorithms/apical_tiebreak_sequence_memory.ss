@@ -51,10 +51,12 @@
     (mutable prev-apical-growth-candidates) ;; (listof CellX)
     (mutable prev-predicted-cells))         ;; (listof CellX)
   (protocol
-    (lambda (pargs->new)                 ;; Nat Nat (listof KWarg) -> TM
+    (lambda (pargs->new)                 ;; (listof KWarg) -> TM
       (lambda (kwargs)
-          (apply (pargs->new kwargs)
-                 (key-word-args kwargs atsm-defaults))))))
+        (let ((tm (apply (pargs->new kwargs)
+                         (key-word-args kwargs atsm-defaults))))
+          (attm:tm-basal-input-size-set! tm (* (attm:tm-column-count tm) (attm:tm-cells-per-column tm)))
+          tm)))))
                                                                                            ;
 (define atsm-defaults                    ;; (listof KWarg)
   `(

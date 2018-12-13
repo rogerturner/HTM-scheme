@@ -33,6 +33,7 @@
     (attm:tm                         tm)
     (attm:make-tm                    make-tm)
     (attm:reset                      reset)
+    (attm:number-of-cells            number-of-cells)
     (attm:get-active-cells           get-active-cells)
     (attm:get-predicted-cells        get-predicted-cells)
     (attm:get-predicted-active-cells get-predicted-active-cells)))

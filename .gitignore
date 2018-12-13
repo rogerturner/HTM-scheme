@@ -2,4 +2,6 @@ compiled
 experiments
 *#*#*
 *.html
-engram*
+*.so
+*.wpo
+
