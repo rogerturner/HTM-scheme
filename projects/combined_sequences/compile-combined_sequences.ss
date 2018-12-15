@@ -1,4 +1,4 @@
-(import (chezscheme))
+(import (except (chezscheme) add1 make-list random reset))
 
 (parameterize (
     (library-directories '(("." . "object-files")))

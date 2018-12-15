@@ -30,7 +30,7 @@
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
 (import
-          (chezscheme)
+          (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms l2l4tm_patch)                    l2l4tm:)
@@ -456,3 +456,4 @@
     [train-stats          . (L2r L2r1 L2r2)]
     [test-stats           . (L2a L2a1 L2a2)])))
 
+; (time (run-experiment-H3c))

@@ -182,7 +182,7 @@
     ;; after each timestep, so can run L4+L2/TM for all cols in parallel    
     (do ((colx 0 (add1 colx))) ((= colx num-columns))
       (thread-colx colx)
-      (if #t ;single-threaded
+      (if #f                             ;; #t for single-threaded
         (begin (L4L2-thread) (TM-thread))
         (begin
           (fork-thread L4L2-thread)
