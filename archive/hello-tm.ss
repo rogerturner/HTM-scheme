@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; ========= HTM-scheme Hello-TM example Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on hello_tm.py which is part of the Numenta Platform for        ;;
@@ -18,12 +20,10 @@
 
   ;; Translated from NuPIC hello_tm.py, see comments there for more info.
 
-(library-directories "../HTM-scheme/algorithms/")
-
 (import 
   (rnrs)
-  (htm_prelude)
-  (temporal_memory))
+  (HTM-scheme archive htm_prelude)
+  (HTM-scheme archive temporal_memory))
 
 (define (hello-tm)
   (display "See nupic/examples/tm/hello_tm.py") (newline)
@@ -32,7 +32,7 @@
                                         (if (zero? (mod (string-length s) 11)) " " "")
                                         (number->string xc)))
                                     "" (vector-take 100 x))))
-          (tm (tm:constructor '(50) 2                           ;; Step 1: create Temporal Pooler instance with appropriate parameters
+          (tm (tm:construct '(50) 2                             ;; Step 1: create Temporal Pooler instance with appropriate parameters
                 `[initial-permanence    . ,(tm:permanence 0.5)]
                 `[connected-permanence  . ,(tm:permanence 0.5)]
                 `[min-threshold         . 8]

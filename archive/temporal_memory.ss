@@ -25,7 +25,7 @@
   ;; revision 0.5
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
-(library (HTM-scheme examples temporal_memory)
+(library (HTM-scheme archive temporal_memory)
                                                                                             ;
 (export
   tm-num-columns
@@ -89,7 +89,7 @@
                                                                                             ;    
 (import 
   (rnrs)
-  (HTM-scheme HTM-scheme algorithms htm_prelude))
+  (HTM-scheme archive htm_prelude))
 
 ;; === Temporal Memory Types ===
                                                                                             ;

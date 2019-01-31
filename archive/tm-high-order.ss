@@ -1,3 +1,5 @@
+#!r6rs
+
 ;; ====== HTM-scheme TM-High-Order example Copyright 2017 Roger Turner. ======
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on tm_high_order.py which is part of the Numenta Platform for   ;;
@@ -20,8 +22,8 @@
 
 (import 
   (rnrs)
-  (HTM-scheme HTM-scheme algorithms htm_prelude)
-  (HTM-scheme examples temporal_memory))
+  (HTM-scheme archive htm_prelude)
+  (HTM-scheme archive temporal_memory))
 
 (define (cols->string cols)              ;; (listof ColX) -> String [of hex chars]
   (list->string (reverse (string->list (number->string (list->bitwise cols) 16)))))
