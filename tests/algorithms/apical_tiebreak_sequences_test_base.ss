@@ -18,7 +18,8 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  ;; Translated from numenta htmresearch/.../apical_tiebreak_sequences_test_base.py --
+  ;; Translated from numenta
+  ;; htmresearch/support/shared_tests/apical_tiebreak_sequences_test_base.py --
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
@@ -34,14 +35,14 @@
 (define w                   40)
 (define apical-input-size 1000)
 
-;; --- Unit testing ---
+;; --- Testing utilities ---
                                                                                             ;
 (define tests "")
 (define failures #f)
                                                                                             ;
 (define (test name)
   (set! tests (string-append tests "\n" name "\n")))
-
+                                                                                            ;
 (define (dl l)
   (append (list (length l) ': )(take 6 l) (list '- ) (reverse (take 6 (reverse l)))))
                                                                                             ;
@@ -62,13 +63,12 @@
                           "  returned: " ,(dl result) #\newline))
                         (set! failures #t)
                         (set! tests "")))) ...)])))
-                                                                                            ;
+
 (define e-cells #f) 
 (define y-cells #f)
-                                                                                            ;
-(define run (lambda ()
 
-(test "SequenceMemory_BasalInputRequiredForPredictions")
+(define run (lambda ()
+#;> (test "SequenceMemory_BasalInputRequiredForPredictions")
   ;; Learn ABCDE with F1.
   ;; Reset, then observe B with F1.
   ;; It should burst, despite the fact that the B cells have apical support.
@@ -87,7 +87,7 @@
     (expect ( (atsm:get-predicted-cells tm)  '() )
             ( (get-bursting-columns tm) (list-ref abcde 1) )))
                                                                                             ;
-(test "SequenceMemory_BasalPredictionsWithoutFeedback")
+#;> (test "SequenceMemory_BasalPredictionsWithoutFeedback")
   ;; Train on ABCDE with F1, XBCDY with F2.
   ;; Test with BCDE. Without feedback, two patterns are predicted.
   (let* ((tm       (init))
@@ -140,8 +140,8 @@
             (list-or e-cells (set (filter-cells-by-column y-cells (list-ref abcde 4))))))
       (expect ((set (atsm:get-active-cells tm)) expected-active )
               ((set (atsm:get-predicted-cells tm)) (list-or e-cells y-cells)))))
-
-(test "SequenceMemory_FeedbackNarrowsThePredictions")
+                                                                                            ;
+#;> (test "SequenceMemory_FeedbackNarrowsThePredictions")
   ;; Train on ABCDE with F1, XBCDY with F2.
   ;; Test with BCDE with F1. One pattern is predicted.
   (let* ( (tm        (init))
@@ -189,8 +189,8 @@
       (cdr abcde))
     (expect ((atsm:get-active-cells tm) e-cells )
             ((atsm:get-predicted-cells tm) e-cells)))
-
-(test "SequenceMemory_IncorrectFeedbackLeadsToBursting")
+                                                                                            ;
+#;> (test "SequenceMemory_IncorrectFeedbackLeadsToBursting")
   ;; Train on ABCDE with F1, XBCDY with F2.
   ;; Test with BCDE with F2. E should burst.
   (let* ((tm        (init))
@@ -240,8 +240,8 @@
     (expect ((atsm:get-predicted-cells tm) y-cells )
             ((get-bursting-columns tm) 
                (list-difference (list-ref abcde 4) (list-ref xbcdy 4)))))
-
-(test "SequenceMemory_UnionOfFeedback")
+                                                                                            ;
+#;> (test "SequenceMemory_UnionOfFeedback")
   ;; Train on ABCDE with F1, XBCDY with F2, MBCDN with F3.
   ;; Test with BCDE with F1 | F2. The last step should predict E and Y.
   (let* ((tm        (init))
@@ -306,13 +306,11 @@
       (expect ((atsm:get-active-cells tm) expected-active )
               ((atsm:get-predicted-cells tm) (list-or e-cells y-cells)))))
 
-(display tests) (newline)
-
-              ))
+  (display tests) (newline) ))
 
 ;; --- Helper functions ---
                                                                                             ;
-(define (init)                   ;; -> TM
+(define (init)                           ;; -> TM
   (atsm:make-tm `(
     [column-count                . ,column-count]
     [apical-input-size           . ,apical-input-size]
@@ -345,18 +343,18 @@
   ;; sorted random selection of w integers in range 0..size-1
   (list-sort < (vector->list (vector-sample (build-vector size id) w))))
                                                                                             ;
-(define (random-column-pattern)        ;; Nat -> {Nat}
+(define (random-column-pattern)          ;; Nat -> {Nat}
   (random-pattern column-count))
                                                                                             ;
-(define (random-apical-pattern)        ;; Nat -> {Nat}
+(define (random-apical-pattern)          ;; Nat -> {Nat}
   (random-pattern apical-input-size))
-  
+                                                                                            ;  
 (define (filter-cells-by-column cells columns)
   (filter
     (lambda (cell)
       (member (div cell 32) columns))
     cells))
-    
+                                                                                            ;
 (define (set l)   ;; {X} -> {X}
   (unique = l))
   

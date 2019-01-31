@@ -134,3 +134,5 @@
 (define (set l)
   (unique = l))
   
+(run)
+  
