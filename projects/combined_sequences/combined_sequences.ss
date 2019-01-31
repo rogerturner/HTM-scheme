@@ -37,38 +37,34 @@
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_pair_memory)     atpm:)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_sequence_memory) atsm:)
   (prefix (HTM-scheme HTM-scheme algorithms column_pooler)                   cp:))
-                                                                                            ;
-;; CColX          = range num-cortical-columns
+
+;; === Types ===
+;; CColX          = Range num-cortical-columns
 ;; Sensation      = (FeatureSDRX, LocationSDRX)
-;; Object         = vectorof Sensation
-;; Sequence       = vectorof (FeatureSDRX, #f)
+;; Object         = Vectorof Sensation
+;; Sequence       = Vectorof (FeatureSDRX, #f)
 ;; Experience     = Object|Sequence
 ;;   interpretation:
 ;;   an experience is either a succession of Sensations (feature at location)
 ;;   or a sequence of features (random locations will be provided)
-;; ExperienceX    = range num-objects|num-sequences
-;; ExperiencePool = vectorof Experience indexed by ExperienceX
-;; FeaturePool    = vectorof SDR indexed by FeatureSDRX
-;; LocationPool   = vectorof SDR indexed by LocationSDRX
-;; SDR            = listof ColX
+;; ExperienceX    = Range num-objects|num-sequences
+;; ExperiencePool = Vectorof Experience indexed by ExperienceX
+;; FeaturePool    = Vectorof SDR indexed by FeatureSDRX
+;; LocationPool   = Vectorof SDR indexed by LocationSDRX
+;; SDR            = Listof ColX
 
 (define-record-type sensation (fields
   feature                                ;; SDRX
   location                               ;; SDRX
   ))
                                                                                             ;
-(define-record-type om (fields           ;; Object Machine
-  num-cortical-columns
-  experiences                            ;; vectorof Experience
-  feature-pool                           ;; vectorof SDR
-  location-pool))                        ;; vectorof SDR
-                                                                                            ;
-(define (run-experiment args)            ;; KWargs ->
+(define (run-experiment exp-args run-args) ;; KWargs KWargs -> 
   ;; train l2l4tm-patch on object/sequence experiences, test, summarize response
-  (define (get key default)
-    (let ((specified (assoc key args)))
-      (if specified (cdr specified) default)))
   (let* (
+      (args (append run-args exp-args))
+      (get  (lambda (key default)
+              (let ((specified (assoc key args)))
+                (if specified (cdr specified) default))))
 ;; experiment parameters
       (num-cortical-columns              (get 'num-cortical-columns 1))
       (num-objects                       (get 'num-objects         10))
@@ -80,32 +76,37 @@
       (input-size                        (get 'input-size        1024))
       (num-locations                     (get 'num-locations   100000))
       (num-input-bits                    (get 'input-bits          20))
-      (settling-time                     (get 'settling-time
-                                              (if (> num-cortical-columns 1) 3 1)))
+      (settling-time                     (get 'settling-time        1))
       (num-repetitions                   (get 'num-repetitions      5))
       (figure                            (get 'figure              'z))
       (syn-perm-proximal-dec-L2          (get 'syn-perm-proximal-dec-L2 (perm 0.001)))
       (min-threshold-proximal-L2         (get 'min-threshold-proximal-L2 10))
       (sample-size-proximal-L2           (get 'sample-size-proximal-L2   15))
       (sample-size-distal-L2             (get 'sample-size-distal-L2     20))
-      (basal-predicted-segment-decrement (get 'basal-predicted-segment-decrement (perm 0.0006)))
+      (basal-predicted-segment-decrement (get 'basal-predicted-segment-decrement (perm 0.001)))
       (num-learning-points               (get 'num-learning-points  1))
       (enable-feedback                   (get 'enable-feedback     #f))
       (online-learning                   (get 'online-learning     #f))
-      (train-stats                       (get 'train-stats '()))
-      (test-stats                        (get 'test-stats  '()))
+      (random-sequence-location          (get 'random-sequence-location  #t))
+      (train-keys                        (get 'train-keys '()))
+      (test-keys                         (get 'test-keys  '()))
       #;(_                                 (random-seed! 42))
 ;; create the sequences and objects
-      (generate-pattern (lambda _
+#;>   (generate-pattern (lambda _        ;; X -> SDR
                           (list-sort fx<? (vector->list 
                             (vector-sample (build-vector input-size id) num-input-bits)))))
-      (generate-pool    (lambda (n) 
+#;>   (generate-pool    (lambda (n)      ;; Nat -> (vectorof SDR)
                           (build-vector (* n num-cortical-columns) generate-pattern)))
       (feature-pool     (generate-pool num-features))
       (location-pool    (generate-pool num-locations))
-      (create-random-experiences (lambda (num-exps num-sensations num-locations)
+#;>   (create-random-experiences         ;; Nat Nat Nat -> Experiences
+        (lambda (num-exps num-sensations num-locations)
         ;; produce Object experiences, or Sequence experiences when num-locations is zero
-        (let ((location-array (build-vector num-locations id)))
+        (let ((location-array (if (zero? num-locations) #f
+                  (build-vector (max num-locations num-sensations)
+                    (if (>= num-locations num-sensations)
+                      id
+                      (lambda _ (random num-locations)))))))
           (build-vector num-exps (lambda _
             ;; locations are distinct but features can be repeated
             (let ((locations (if (positive? num-locations)
@@ -113,12 +114,8 @@
                                  (make-vector num-sensations #f))))
               (build-vector num-sensations (lambda (sx)
                   (make-sensation (random num-features) (vector-ref locations sx))))))))))
-      (sequence-experiences (create-random-experiences num-sequences seq-length 0))
-      (object-experiences   (create-random-experiences num-objects num-points num-locations))
-      (sequences   
-        (make-om num-cortical-columns sequence-experiences feature-pool location-pool))
-      (objects                           ;; objects have same features as sequences
-        (make-om num-cortical-columns object-experiences feature-pool location-pool))
+      (sequences (create-random-experiences num-sequences seq-length 0))
+      (objects   (create-random-experiences num-objects num-points num-locations))
 ;; setup experiment
       (L2-overrides  (get 'L2-overrides
                       `([syn-perm-proximal-dec       . ,syn-perm-proximal-dec-L2]
@@ -137,30 +134,30 @@
       (patch 
         (l2l4tm:make-patch num-cortical-columns input-size num-input-bits
           enable-feedback L2-overrides L4-overrides TM-overrides))
+      (start-time     (cpu-time))
       )
-#;> (define (train-superimposed          ;; OM OM ->
-              objects sequences)
+#;> (define (train-superimposed)         ;; -> 
       ;; train objects with feature superimposed with feature from random sequences
       (let* ( (sequence-order (apply append (make-list num-repetitions 
                                               (build-list num-sequences id))))
               (ns             (length sequence-order))
               (sequence-order (vector-sample (list->vector sequence-order) ns)))
         (do ((ox 0 (add1 ox))) ((= ox num-objects))
-          (let ((object-sensations (vector-ref (om-experiences objects) ox)))
+          (let ((object-sensations (vector-ref objects ox)))
             (do ((s 0 (add1 s))) ((= s num-repetitions))
               (let* ( (ns          (vector-length object-sensations))
                       (object-ss   (vector-sample object-sensations ns))
                       (sequence-id (vector-ref sequence-order (+ (* ox num-repetitions) s)))
-                      (sequence-ss (vector-ref (om-experiences sequences) sequence-id)))
+                      (sequence-ss (vector-ref sequences sequence-id)))
                 (vector-for-each         ;; sensation in sensations
                   (lambda (sx)
                     (let ((obj-feature (union1d
-                            (vector-ref (om-feature-pool objects)
+                            (vector-ref feature-pool
                               (sensation-feature (vector-ref object-ss sx)))
-                            (vector-ref (om-feature-pool sequences)
+                            (vector-ref feature-pool
                               (sensation-feature (vector-ref sequence-ss sx)))))
                           (obj-location
-                            (vector-ref (om-location-pool objects)
+                            (vector-ref location-pool
                               (sensation-location (vector-ref object-ss sx)))))
                       (do ((_ 0 (add1 _))) ((= _ settling-time))
                         (l2l4tm:compute patch
@@ -169,8 +166,7 @@
                           #t))))
                   (build-vector ns id))))))))
                                                                                             ;
-#;> (define (infer-switching             ;; OM OM Stats ->
-              objects sequences stats)
+#;> (define (infer-switching stats)      ;; Stats -> 
       ;; test objects & sequences after superimposed training
       (let ((objectxs (vector-sample (build-vector num-objects id) 8)))
         (for-each
@@ -181,58 +177,58 @@
               (lambda (sx)
                 (vector-set! stats 0 
                   (append (vector-ref stats 0)
-                          (list (get-stats-for test-stats #f ex)))))))
+                          (list (get-stats-for test-keys)))))))
           '(seq obj seq obj seq seq obj seq) (build-list 8 id))))
                                                                                             ;
-#;> (define (have-sensations-of          ;; Experience OM Nat Bool [(Nat -> )]
-              experience om settling-time learn . report)
+#;> (define (have-sensations-of          ;; Experience Nat Bool [(Nat -> )] ->
+              experience settling-time learn . report)
       ;; feed each sensation of experience settling-time times, report after each sensation
       ;; (replaces both learnObjects and infer)
       (let* ( (object?    (sensation-location (vector-ref experience 0)))
               (ns         (vector-length experience))
               (experience (if (and object? (not learn))    ;; infer objects on shuffled sensations
                               (vector-sample experience ns)
-                              experience))
-              (ncc        (om-num-cortical-columns om)))
+                              experience)))
         (define (build-input field sx)
           (let ((fieldxs (vector-map field experience)))
-            (build-vector ncc
+            (build-vector num-cortical-columns
               (if (or object? (eq? field sensation-feature))
                   (lambda (ccx) 
-                    (+ (* ncc (vector-ref fieldxs sx)) ccx))
-                  (lambda _ (random (vector-length (om-location-pool om))))))))
+                    (+ (* num-cortical-columns (vector-ref fieldxs sx)) ccx))
+                  (lambda _ 
+                    (if random-sequence-location
+                      (random (vector-length location-pool))
+                      sx) )))))
         (do ((sx 0 (add1 sx))) ((= sx ns))
           (do ((_ 0 (add1 _))) ((= _ settling-time))
             (l2l4tm:compute patch
-              (vector-refs (om-feature-pool om)  (build-input sensation-feature sx))
-              (vector-refs (om-location-pool om) (build-input sensation-location sx))
-              learn)
-            (unless (null? report)
-              ((car report) sx))))))
+              (vector-refs feature-pool  (build-input sensation-feature sx))
+              (vector-refs location-pool (build-input sensation-location sx))
+              learn))
+          (unless (null? report)
+            ((car report) sx)))))
                                                                                             ;
-#;> (define (train-all om n-reps stats)  ;; OM Nat Stats ->
-      ;; train the network on all the experiences
-      ;; (replaces trainSequences and trainObjects)
-      (vector-for-each (lambda (ex)
-          (let ((experience (vector-ref (om-experiences om) ex)))
-            (do ((_ 0 (add1 _))) ((= _ n-reps))
-              (have-sensations-of experience om num-learning-points #t)
-              (unless (sensation-location (vector-ref experience 0))
-                ;; reset TM between presentations of sequence (num-learning-points = 1 for sequences)
-                (vector-for-each atsm:reset (l2l4tm:patch-TMs patch)))))
+#;> (define (train-all es n-reps stats)  ;; Experiences Nat Stats -> 
+      ;; train the network on all the experiences (replaces trainSequences and trainObjects)
+      (vector-for-each 
+        (lambda (e ex)
+          (do ((_ 0 (add1 _))) ((= _ n-reps))
+            (have-sensations-of e num-learning-points #t)
+            (unless (sensation-location (vector-ref e 0))
+              ;; reset TM between presentations of sequence (num-learning-points = 1 for sequences)
+              (vector-for-each atsm:reset (l2l4tm:patch-TMs patch))))
           (vector-set! stats ex 
             (append (vector-ref stats ex)
-                    (list (get-stats-for train-stats om ex))))
+                    (list (get-stats-for train-keys))))
           (l2l4tm:reset patch))
-        (indexes (om-experiences om))))
+        es (indexes es)))
                                                                                             ;
-#;> (define (infer om ex report)         ;; OM Nat (Nat -> )
+#;> (define (infer es ex report)         ;; Experiences Nat (Nat -> )
       ;; test experience, update stats after each sensation
-      (have-sensations-of (vector-ref (om-experiences om) ex) 
-                          om settling-time #f report)
+      (have-sensations-of (vector-ref es ex) settling-time #f report)
       (l2l4tm:reset patch))              ;; reset defaults to true for infer
                                                                                             ;
-#;> (define (get-stats-for keys om ex);; {Symbol} OM Nat -> {Nat}
+#;> (define (get-stats-for keys)         ;; {Symbol} -> {Nat}
       (define (lengths cells layer)
         (vector-map length
           (vector-map cells (layer patch))))
@@ -240,31 +236,30 @@
         (case key
           [(L4lpa) (lengths atpm:get-predicted-active-cells l2l4tm:patch-L4s)]
           [(TMlnp) (lengths atsm:get-next-predicted-cells   l2l4tm:patch-TMs)]
-          [(TMlpa) (lengths atpm:get-predicted-active-cells l2l4tm:patch-TMs)]
+          [(TMlpa) (lengths atsm:get-predicted-active-cells l2l4tm:patch-TMs)]
           [(L2r)   (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 0))]      
           [(L2r1)  (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 1))]      
           [(L2r2)  (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 2))]      
           [(L2a)   (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 0))]      
           [(L2a1)  (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 1))]      
-          [(L2a2)  (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 2))]      
-          [(L2la)  (lengths cp:get-active-cells l2l4tm:patch-L2s)]))       
+          [(L2a2)  (cp:get-active-cells (vector-ref (l2l4tm:patch-L2s patch) 2))]))
         keys))
                                                                                             ;
-#;> (define (infer-all om stats)         ;; OM Stats
+#;> (define (infer-all es stats)         ;; Experiences Stats
       ;; test each experience and save stats for each sensation
       (vector-for-each (lambda (ex)
-          (infer om ex 
+          (infer es ex 
             (lambda (sx)
               (vector-set! stats ex 
                 (append (vector-ref stats ex)
-                        (list (get-stats-for test-stats om ex)))))))
-        (indexes (om-experiences om))))
+                        (list (get-stats-for test-keys)))))))
+        (indexes es)))
                                                                                             ;
     (let ((stats (make-vector (max num-objects num-sequences) '())))
 ;; train the network
       (case figure
         [(A6)
-          (train-superimposed objects sequences)]
+          (train-superimposed)]
         [(H3b H3c)
           (train-all objects 1 stats)]
         [else
@@ -273,15 +268,25 @@
 ;; run inference
       (case figure
         [(A6)
-          (infer-switching objects sequences stats) ]
+          (infer-switching stats) ]
         [(H3b H3c)
           (infer objects 0 (lambda (sx)  ;; just first object
               (vector-set! stats 0 
                 (append (vector-ref stats 0)
-                        (list (get-stats-for test-stats objects 0)))))) ]
+                        (list (get-stats-for test-keys)))))) ]
         [else
           (infer-all objects   stats)
           (infer-all sequences stats) ] )
+;; display timing
+      (let ((tenths (fxdiv (+ (- (cpu-time) start-time) 50) 100)))
+        (for-each display `(
+            ,(symbol->string figure) " " ,@run-args #\newline
+            ,(fxdiv tenths 10) "." ,(fxmod tenths 10) "s cpu time\n"
+            ,(atpm:get-n-segments-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 segments\n"
+            ,(atpm:get-n-synapses-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 synapses\n"
+            ,(atsm:get-n-segments-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM segments\n"
+            ,(atsm:get-n-synapses-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM synapses\n"
+            )))
 ;; compute statistics needed for plots
     (let ((mean (lambda (x) (if (eq? figure 'A6)  x
                    (int<- (/ x (+ num-objects num-sequences)))))))
@@ -294,7 +299,7 @@
             (unless (null? exp-stats)
               (for-each display (list "\n" ex ": " 
                 (if (> num-cortical-columns 1)
-                  (if (= (length test-stats) 1)  exp-stats
+                  (if (= (length test-keys) 1)  exp-stats
                     (list (car exp-stats) "..." (car (reverse exp-stats))))
                   (map (lambda (sens-stats)
                           (map (lambda (v) (vector-ref v 0)) sens-stats))
@@ -302,7 +307,9 @@
           stats)])
     (let ((summary-file "HTM-scheme/projects/combined_sequences/combined_sequences.data"))
       (with-output-to-file summary-file (lambda ()
-        (write [cons [list "figure" (symbol->string figure)]
+        (write [cons* 
+          [list "figure" (symbol->string figure)]
+          [list "using"  run-args]
           (case figure
             [(H3b H3c)
               (let ((first-object (vector-ref stats 0)))  ;; (SensListOf (KeyListOf (CCVectorOf Number)))
@@ -311,7 +318,7 @@
                     (lambda (key kx)
                       [list (symbol->string key)
                             (list-ref (car first-object) kx)])
-                    train-stats (indexes train-stats))
+                    train-keys (indexes train-keys))
                   (map                   ;; cell indexes for each stat
                     (lambda (key kx)
                       [list (symbol->string key)
@@ -320,7 +327,7 @@
                                          (union1d acc (list-ref v kx)))
                               '()
                               first-object)])
-                    test-stats (indexes test-stats))
+                    test-keys (indexes test-keys))
                   (map                   ;; number of sensations/cell for each stat
                     (lambda (key kx)
                       [list (string-append (symbol->string key) "c")
@@ -332,25 +339,26 @@
                                     acc)
                                   (make-vector (cp:number-of-cells (vector-ref (l2l4tm:patch-L2s patch) 0)) 0)
                                   first-object))) ])
-                    test-stats (indexes test-stats))))]
+                    test-keys (indexes test-keys))))]
             [else                        ;; AH2017 figures
               (map                                     ;; each stats key
                 (lambda (key kx)                       ;; Symbol Nat ->
                   [cons (symbol->string key)
-                    [list (map mean                    ;; average
+                    [list (map mean                    ;; average of objects/sequences for 4a/5a
                       (vector-fold-left                ;; ..over experiences
                         (lambda (accs exp-stats)       ;; (listof Number) (SensListOf (KeyListOf (vectorof Number)))
                           (if (null? exp-stats)  accs
                             (map                       ;; ..each sensation, average columns
                               (lambda (ac sens-stats)  ;; Number (listof (vectorof Number)) -> Number
-                                (+ ac (vector-average (list-ref sens-stats kx))))
+                                (if (null? sens-stats)  ac
+                                  (+ ac (vector-average (list-ref sens-stats kx)))))
                               accs exp-stats)))        ;; -> (listof Number)
                         (make-list (length (vector-ref stats 0)) 0)
                         stats)) ] ] )
-                test-stats (indexes test-stats))])
-            ] )) 'truncate ))))))
+                test-keys (indexes test-keys))])
+             ] )) 'truncate ))))))
 
-(define (run-experiment-4a)
+(define (run-experiment-A4a . args)
   (run-experiment `(
     [figure          .  A4a]
     [num-sequences   .   50]
@@ -362,9 +370,10 @@
     [num-repetitions .   30]
     [input-size      . 2048]
     [basal-predicted-segment-decrement . ,(perm 0.001)]
-    [test-stats . (L4lpa TMlnp TMlpa)])))
+    [test-keys       . (L4lpa TMlnp TMlpa)])
+    args))
                                                                                             ;
-(define (run-experiment-5a)
+(define (run-experiment-A5a . args)
   (run-experiment `(
     [figure               . A5a]
     [num-sequences        .   0]
@@ -373,9 +382,10 @@
     [trial-num            .   4]
     [num-objects          .  50]
     [num-locations        . 100]
-    [test-stats . (L4lpa TMlnp TMlpa)])))
+    [test-keys            . (L4lpa TMlnp TMlpa)])
+    args))
                                                                                             ;
-(define (run-experiment-6)
+(define (run-experiment-A6  . args)
   (run-experiment `(
     [figure          .  A6]
     [num-sequences   .  50]
@@ -387,25 +397,10 @@
     [settling-time   .   1]
     [num-repetitions .  30]
     [basal-predicted-segment-decrement . ,(perm 0.001)]
-    [test-stats      . (L4lpa TMlpa)])))
+    [test-keys       . (L4lpa TMlpa)])
+    args))
                                                                                             ;
-(define (run-experiment-H3b)
-  #;(                                    ;; parameter combinations:  
-    [input-size         . 1024]          ;; l2_pooling/convergence_activity.py
-    [num-input-bits       . 20]
-    [num-learning-points  .  4]          ;; ?
-  ) #;(
-    [input-size          . 150]          ;; Hawkins Ahmed Cui 2017
-    [num-input-bits       . 10]
-    [num-learning-points  .  4]          ;; ?
-  ) #;(  
-    [enable-feedback     . #f]
-    [num-learning-points .  5]
-  ) #;(
-    [num-features         . 30]
-    [num-objects          . 30]
-    [num-locations        . 30]
-  )
+(define (run-experiment-H3b . args)
   (run-experiment `(
     [figure              . H3b]
     [input-size         . 1024]          ;; l2_pooling/convergence_activity.py
@@ -413,7 +408,7 @@
     [num-learning-points  .  4]          ;; ?
     [num-cortical-columns .  1]
     [num-features         .  3]
-    [num-points           . 10]
+    [num-points           . 15]
     [num-objects          . 10]
     [num-locations        . 10]
     [L2-overrides         . 
@@ -423,19 +418,15 @@
     [enable-feedback      . #t]
     [num-sequences        .  0]
     [settling-time        .  2]
-    [train-stats          . (L2r)]
-    [test-stats           . (L2a)])))
+    [train-keys           . (L2r)]
+    [test-keys            . (L2a)])
+    args))
+  ;; Other settings (cf Hawkins Ahmed Cui 2017):
+  ;;   (run-experiment-H3b '[input-size . 150] '[num-input-bits . 10])
+  ;;   (run-experiment-H3b '[enable-feedback . #f] '[num-learning-points . 5])
+  ;;   (run-experiment-H3b '[num-features . 30] '[num-locations . 30] '[num-objects . 30])
                                                                                             ;
-(define (run-experiment-H3c)
-  #;(                                    ;; parameter combinations:  
-    [input-size         . 1024]          ;; l2_pooling/convergence_activity.py
-    [num-input-bits       . 20]
-    [num-learning-points  .  4]          ;; ?
-  ) #;(
-    [input-size          . 150]          ;; Hawkins Ahmed Cui 2017
-    [num-input-bits       . 10]
-    [num-learning-points  .  4]          ;; ?
-  )
+(define (run-experiment-H3c . args)
   (run-experiment `(
     [figure              . H3c]
     [input-size         . 1024]          ;; l2_pooling/convergence_activity.py
@@ -443,7 +434,7 @@
     [num-learning-points  .  4]          ;; ?
     [num-cortical-columns .  3]
     [num-features         .  3]
-    [num-points           . 10]
+    [num-points           . 15]
     [num-objects          . 10]
     [num-locations        . 10]
     [L2-overrides         . 
@@ -453,7 +444,28 @@
     [enable-feedback      . #t]
     [num-sequences        .  0]
     [settling-time        .  2]
-    [train-stats          . (L2r L2r1 L2r2)]
-    [test-stats           . (L2a L2a1 L2a2)])))
+    [train-keys           . (L2r L2r1 L2r2)]
+    [test-keys            . (L2a L2a1 L2a2)])
+    args))
+  ;; Other settings (cf Hawkins Ahmed Cui 2017):
+  ;;   (run-experiment-H3c '[input-size . 150] '[num-input-bits . 10])
 
-; (time (run-experiment-H3c))
+#;(run-experiment-A4a '[num-sequences . 10] '[enable-feedback . #t])
+
+#;(run-experiment-A4a '[num-sequences . 10] '[input-size . 150] '[num-input-bits . 10]
+  `[basal-predicted-segment-decrement . ,(perm 0.01)] '[random-sequence-location . #f])
+  
+#;(run-experiment-A4a '[input-size . 150] '[num-input-bits . 10])
+  
+#;(run-experiment-A5a '[input-size . 150] '[num-input-bits . 10])
+
+#;(run-experiment-A6  '[num-objects . 10] '[num-sequences . 10])
+
+#;(run-experiment-H3b '[input-size . 150] '[num-input-bits . 10])
+
+#;(run-experiment-H3c '[input-size . 150] '[num-input-bits . 10]
+  '[num-learning-points  .  6])
+
+
+(run-experiment-H3b '[num-features . 30] '[num-locations . 30] '[num-objects . 30]
+   '[input-size . 150] '[num-input-bits . 10])
