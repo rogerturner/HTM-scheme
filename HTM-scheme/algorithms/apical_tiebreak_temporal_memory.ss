@@ -1,6 +1,6 @@
-#!r6rs
+#!chezscheme
 
-;; === HTM-scheme Apical Tiebreak Temporal Memory Copyright 2017 Roger Turner. ===
+;; === HTM-scheme Apical Tiebreak Temporal Memory Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2017, Numenta, Inc.                            ;;
@@ -26,55 +26,47 @@
 (library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
                                                                                             ;
 (export
-  tm
+  reset
+  depolarize-cells
+  activate-cells
+  (rename
+    (tm-active-cells           get-active-cells)
+    (tm-predicted-active-cells get-predicted-active-cells)
+    (tm-winner-cells           get-winner-cells)
+    (tm-predicted-cells        get-predicted-cells)
+    (tm-active-basal-segments  get-active-basal-segments)
+    (tm-active-apical-segments get-active-apical-segments))
+
+  tm                                     ;; for pair/sequence memory
   make-tm
   tm-column-count
   tm-cells-per-column
-  tm-basal-input-size-set!
-  reset
-  activate-cells
-  depolarize-cells
   number-of-cells
-  get-active-cells
-  get-predicted-active-cells
-  get-winner-cells
-  get-predicted-cells
   map-segments-to-cells
-  get-active-basal-segments
-  get-active-apical-segments
+  tm-basal-input-size-set!
   (rename                                ;; for temporal_memory_test
     (create-segment       test:create-segment)
     (tm-basal-connections test:tm-basal-connections)
     (grow-synapses        test:grow-synapses)
     (tm-basal-pre-index   test:tm-basal-pre-index)
-    (tm-next-flatx        test:tm-next-flatx)
-    ))
+    (tm-next-flatx        test:tm-next-flatx))
+  tm-n-segments-created
+  tm-n-synapses-created)
                                                                                             ;
 (import
-  (rnrs)
+  (except (chezscheme) add1 make-list random reset)
   (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept))
   
-;; === Temporal Memory Types ===
+;; === Types (see htm_concept.ss) ===
                                                                                             ;
-;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
-;; X, Y, Z      = type parameters (arbitrary types in function type specification etc)
-;; X Y -> Z     = function with argument types X, Y and result type Z
-;; {X}          = abbreviation for (listof X)
-;; Nat          = natural number (including zero) (Scheme Fixnum or exact Integer)
-;; Fix10k       = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
-;; Permanence   = Fix10k [0 - MAXPERM], interpreted as 0.0 - 0.9999
-;; Synapse      = Fixnum, interpreted as CellX * 10000 + Permanence 
-;; Synapses     = (vectorof Synapse) [optionally fxvector in Chez Scheme]
-;; Segment      = Record: CellX, FlatX, and Synapses
 ;; FlatX        = Nat, segment sequence number
-;; CellX        = Nat [0 - (div (expt 2 (fixnum-width)) 10000)] cell index
+;; CellX        = Nat, cell index
 ;; CellVecOf    = Vector indexed by CellX
-;; ColX         = Nat [0 - MAXCOL], column index of cell
-;; Connections  = (CellVecOf (listof Segment)), basal and apical segments for cells
+;; ColX         = Nat, column index of cell
 ;; TM           = Record: tm parameters, cells
 
-;; === Parameters, Data, Convenience Functions ===
+;; === Layer record ===
                                                                                             ;
 (define-record-type tm                   ;; TM
   (fields
@@ -112,7 +104,9 @@
     (mutable apical-pre-index)           ;; (CellVecOf (listof FlatX))
     (mutable seg-index)                  ;; (vectorof Segment) [indexed by flatx]
     (mutable next-flatx)                 ;; Nat: next available index in seg-index
-    (mutable free-flatx))                ;; (listof Nat): indices available for re-use
+    (mutable free-flatx)                 ;; (listof Nat): indices available for re-use
+    (mutable n-segments-created)
+    (mutable n-synapses-created))
   (protocol
     (lambda (new)                        ;; (listof KWarg) -> TM
       (lambda (kwargs)
@@ -146,7 +140,7 @@
   [use-apical-modulation-basal-threshold . #t]
   [basal-connections                     . #()]
   [apical-connections                    . #()]
-  [active-cells                          . #()]
+  [active-cells                          . ()]
   [winner-cells                          . ()]
   [predicted-cells                       . ()]
   [predicted-active-cells                . ()]
@@ -154,48 +148,49 @@
   [active-apical-segments                . ()]
   [matching-basal-segments               . ()]
   [matching-apical-segments              . ()]
-  [basal-potential-overlaps              . #()]
-  [apical-potential-overlaps             . #()]
+  [basal-potential-overlaps              . #vfx()]
+  [apical-potential-overlaps             . #vfx()]
   [basal-pre-index                       . #()]
   [apical-pre-index                      . #()]
   [seg-index                             . #()]
   [next-flatx                            . 0]
-  [free-flatx                            . ()]))
+  [free-flatx                            . ()]
+  [n-segments-created                    . 0]
+  [n-synapses-created                    . 0] ))
 
 ;; === Apical Tiebreak Temporal Memory Algorithm ===
                                                                                             ;
 (define (reset tm)                       ;; TM ->
   ;; Clear all cell and segment activity.
-  (tm-active-cells-set!              tm (vector))
-  (tm-winner-cells-set!              tm      '())
-  (tm-predicted-cells-set!           tm      '())
-  (tm-predicted-active-cells-set!    tm      '())
-  (tm-active-basal-segments-set!     tm      '())
-  (tm-active-apical-segments-set!    tm      '())
-  (tm-matching-basal-segments-set!   tm      '())
-  (tm-matching-apical-segments-set!  tm      '())
-  (tm-basal-potential-overlaps-set!  tm (vector))
-  (tm-apical-potential-overlaps-set! tm (vector)))
+  (tm-active-cells-set!              tm '())
+  (tm-winner-cells-set!              tm '())
+  (tm-predicted-cells-set!           tm '())
+  (tm-predicted-active-cells-set!    tm '())
+  (tm-active-basal-segments-set!     tm '())
+  (tm-active-apical-segments-set!    tm '())
+  (tm-matching-basal-segments-set!   tm '())
+  (tm-matching-apical-segments-set!  tm '())
+  (tm-basal-potential-overlaps-set!  tm (fxvector))
+  (tm-apical-potential-overlaps-set! tm (fxvector)))
                                                                                             ;
 (define (depolarize-cells                ;; TM {CellX} {CellX} Boolean ->
           tm basal-input apical-input learn)
   ;; Calculate predictions.
   (let-values ([(active-apical-segments matching-apical-segments apical-potential-overlaps)
-                (calculate-apical-segment-activity 
-                    tm (list->vector apical-input) (tm-apical-pre-index tm))])
+                (calculate-apical-segment-activity tm apical-input)])
     (let ((reduced-basal-threshold-cells
             (if (or learn (tm-use-apical-modulation-basal-threshold tm))
               '()
               (map-segments-to-cells active-apical-segments))))
       (let-values ([(active-basal-segments matching-basal-segments basal-potential-overlaps)
-                    (calculate-basal-segment-activity tm (list->vector basal-input) 
-                        (tm-basal-pre-index tm) reduced-basal-threshold-cells)])
+                    (calculate-basal-segment-activity tm basal-input
+                        reduced-basal-threshold-cells)])
         (tm-predicted-cells-set! tm 
           (calculate-predicted-cells tm active-basal-segments active-apical-segments))
         (tm-active-basal-segments-set!     tm active-basal-segments)
         (tm-active-apical-segments-set!    tm active-apical-segments)
-        (tm-matching-basal-segments-set!   tm (sorted-segs matching-basal-segments))
-        (tm-matching-apical-segments-set!  tm (sorted-segs matching-apical-segments))
+        (tm-matching-basal-segments-set!   tm matching-basal-segments)
+        (tm-matching-apical-segments-set!  tm matching-apical-segments)
         (tm-basal-potential-overlaps-set!  tm basal-potential-overlaps)
         (tm-apical-potential-overlaps-set! tm apical-potential-overlaps)))))
                                                                                             ;
@@ -259,8 +254,7 @@
         (learn-on-new-segments tm (tm-apical-connections tm) new-apical-segment-cells
                                apical-growth-candidates (tm-apical-pre-index tm))))
     ;; Save the results
-    (tm-active-cells-set! tm (list->vector new-active-cells))
-    (vector-sort! fx<? (tm-active-cells tm))
+    (tm-active-cells-set! tm (sort! fx<? new-active-cells))
     (tm-winner-cells-set! tm learning-cells)
     (tm-predicted-active-cells-set! tm correct-predicted-cells)))
                                                                                           ;
@@ -335,17 +329,18 @@
           apical-segments-to-punish
           new-apical-segment-cells)))
                                                                                           ;
-(define (calculate-apical-segment-activity ;; TM (vectorof CellX) (CellVecOf {FlatX}) -> {Segment} {Segment} (vectorof Nat)
-          tm active-input pre-index)
+(define (calculate-apical-segment-activity ;; TM {CellX} -> {Seg} {Seg} (vectorof Nat)
+          tm active-input)
   ;; Calculate the active and matching apical segments for this timestep.
-  (compute-activity tm active-input pre-index 0 '()))
+  (calculate-segment-activity tm active-input (tm-apical-pre-index tm) 0 '()))
                                                                                             ;
-(define (calculate-basal-segment-activity  ;; TM (vectorof CellX) (CellVecOf {FlatX}) {CellX} -> {Segment} {Segment} (vectorof Nat)
-          tm active-input pre-index reduced-basal-threshold-cells)
+(define (calculate-basal-segment-activity  ;; TM {CellX} {CellX} -> {Seg} {Seg} (vectorof Nat)
+          tm active-input reduced-basal-threshold-cells)
   ;; Calculate the active and matching basal segments for this timestep.
-  (compute-activity tm active-input pre-index (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
+  (calculate-segment-activity tm active-input (tm-basal-pre-index tm)
+    (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
                                                                                             ;
-(define (calculate-predicted-cells tm    ;; TM {Segment} {Segment} -> {CellX}
+(define (calculate-predicted-cells tm    ;; TM {Seg} {Seg} -> {CellX}
           active-basal-segments active-apical-segments)
   ;; Calculate the predicted cells, given the set of active segments.
   (let* ( (cells-for-basal-segments  (map-segments-to-cells active-basal-segments))
@@ -366,7 +361,7 @@
                 cells-for-basal-segments)))
     predicted-cells))
                                                                                             ;
-(define (learn tm connections            ;; TM Connections {Seg} (vectorof CellX) {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
+(define (learn tm connections            ;; TM Connections {Seg} {CellX} {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
           learning-segments active-input growth-candidates potential-overlaps pre-index)
   ;; Adjust synapse permanences, grow new synapses, and grow new segments.
   (adjust-synapses tm connections learning-segments active-input)
@@ -377,7 +372,7 @@
             (length growth-candidates)
             (map
               (lambda (segment)
-                (fx- (tm-sample-size tm) (vector-ref potential-overlaps (seg-flatx segment))))
+                (fx- (tm-sample-size tm) (fxvector-ref potential-overlaps (seg-flatx segment))))
               learning-segments))))
     (let ((max-new
             (if (fx=? -1 (tm-max-synapses-per-segment tm))
@@ -421,7 +416,7 @@
         (cond
           [ (null? segments) (next-cell (cdr cells) (cons best-seg learning-segments)) ]
           [ (fx=? (car cells) (seg-cellx (car segments)))
-              (let ((overlap (vector-ref potential-overlaps (seg-flatx (car segments)))))
+              (let ((overlap (fxvector-ref potential-overlaps (seg-flatx (car segments)))))
                 (if (fx>? overlap max-overlap)
                     (next-segment (cdr segments) (car segments) overlap)
                     (next-segment (cdr segments) best-seg max-overlap))) ]
@@ -437,7 +432,7 @@
           (cell-scores
             (map
               (lambda (segment)
-                (vector-ref potential-overlaps (seg-flatx segment)))
+                (fxvector-ref potential-overlaps (seg-flatx segment)))
               candidate-segments))
           (columns-for-candidates
             (map (/cpc tm) (map-segments-to-cells candidate-segments)))
@@ -469,47 +464,31 @@
     columnxs))
                                                                                             ;
 (define (number-of-cells tm)
-  (* (tm-column-count tm) (tm-cells-per-column tm)))
-                                                                                            ;
-(define (get-active-cells tm)            ;; TM -> {CellX}
-  (vector->list (tm-active-cells tm)))
-                                                                                            ;
-(define (get-predicted-active-cells tm)  ;; TM -> {CellX}
-  (tm-predicted-active-cells tm))
-                                                                                            ;
-(define (get-winner-cells tm)            ;; TM -> {CellX}
-  (tm-winner-cells tm))
-                                                                                            ;
-(define (get-predicted-cells tm)         ;; TM -> {CellX}
-  (tm-predicted-cells tm))
-                                                                                            ;
-(define (get-active-basal-segments tm)   ;; TM -> {CellX}
-  (tm-active-basal-segments tm))
-                                                                                            ;
-(define (get-active-apical-segments tm)  ;; TM -> {CellX}
-  (tm-active-apical-segments tm))
+  (fx* (tm-column-count tm) (tm-cells-per-column tm)))
 
 ;; === Supporting Functions ===
                                                                                             ;
 ;; --- Connections: see NuPIC connections.py ---
                                                                                             ;
-(define (compute-activity                ;; TM (vectorof CellX) (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (vectorof Nat)
-          tm active-presynaptic-cells pre-index reduced-threshold reduced-threshold-cells)
-  ;; produce segments with connected/potential synapses, and counts, for active cells
-  (let* (
-    (napsfs    (make-vector (tm-next-flatx tm) 0)) ;; "num-active-potential-synapses-for-segment"
-    (nacsfs    (make-vector (tm-next-flatx tm) 0)) ;; "num-active-connected-synapses-for-segment"
-    (threshold (tm-connected-permanence tm))
-    (segments  (tm-seg-index tm))
-    (actsegs   '())
-    (potsegs   '())
-    (actthresh (tm-activation-threshold tm))
-    (potthresh (tm-min-threshold tm)))
+(define (calculate-segment-activity      ;; TM {CellX} (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (Vectorof Nat)
+          tm active-input pre-index reduced-threshold reduced-threshold-cells)
+  ;; for active-input cells, produce lists of segments with connected/potential synapses,
+  ;; and potential snapse counts (combines connections.computeActivity and _calculateApical/BasalSegmentActivity)
+  (let (
+    (napsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-potential-synapses-for-segment"
+    (nacsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-connected-synapses-for-segment"
+    (threshold  (tm-connected-permanence tm))
+    (segments   (tm-seg-index tm))
+    (actsegs    '())
+    (potsegs    '())
+    (actthresh  (tm-activation-threshold tm))
+    (potthresh  (tm-min-threshold tm))
+    (no-reduced (null? reduced-threshold-cells)))
     (define (update-actsegs segx synapse)
       (when (fx>=? (syn-perm synapse) threshold)
         (let ((segment    (vector-ref segments segx))
-              (new-nacsfs (add1 (vector-ref nacsfs segx))))
-          (if (null? reduced-threshold-cells)
+              (new-nacsfs (add1 (fxvector-ref nacsfs segx))))
+          (if no-reduced
               (when (fx=? new-nacsfs actthresh)
                 (unless (memq segment actsegs)
                   (set! actsegs (cons segment actsegs))))
@@ -518,18 +497,17 @@
                         (fx=? new-nacsfs actthresh))
                 (unless (memq segment actsegs)
                   (set! actsegs (cons segment actsegs)))))
-          (vector-set! nacsfs segx new-nacsfs))))
+          (fxvector-set! nacsfs segx new-nacsfs))))
     (define (update-potsegs segx syn-low syn-high)
       (let* ( (synapses (seg-synapses (vector-ref segments segx)))
-              (synapse  (search synapses syn-low syn-high)))
+              (synapse  (synapses-search synapses syn-low syn-high)))
         (when synapse
-          (let ((new-napsfs (add1 (vector-ref napsfs segx))))
+          (let ((new-napsfs (add1 (fxvector-ref napsfs segx))))
             (when (fx=? new-napsfs potthresh)
-              (unless (memq (vector-ref segments segx) potsegs)
-                (set! potsegs (cons (vector-ref segments segx) potsegs))))
-            (vector-set! napsfs segx new-napsfs))
+              (set! potsegs (cons (vector-ref segments segx) potsegs)))
+            (fxvector-set! napsfs segx new-napsfs))
           (update-actsegs segx synapse))))
-    (vector-for-each
+    (for-each
       (lambda (cellx)
         (let* ((syn-low  (make-syn cellx min-perm))
                (syn-high (fx+ syn-low max-perm)))
@@ -537,19 +515,18 @@
             (lambda (segx)
               (update-potsegs segx syn-low syn-high))
             (vector-ref pre-index cellx))))
-      active-presynaptic-cells)
-    (values actsegs potsegs napsfs)))
+      active-input)
+    (values actsegs
+      (unique eq? (sort!
+        (lambda (sega segb)
+          (cond [(fx<? (seg-cellx sega) (seg-cellx segb))]
+                [(fx=? (seg-cellx sega) (seg-cellx segb))
+                    (fx<? (seg-flatx sega) (seg-flatx segb))]
+                [else #f]))
+        potsegs))
+      napsfs)))
                                                                                             ;
-(define (sorted-segs segs)               ;; (listof Segment) -> (listof Segment)
-  ;; produce list of segments sorted by cellx or flatx
-  (list-sort (lambda (sega segb)
-                (cond [(fx<? (seg-cellx sega) (seg-cellx segb))]
-                      [(fx=? (seg-cellx sega) (seg-cellx segb))
-                          (fx<? (seg-flatx sega) (seg-flatx segb))]
-                      [else #f]))
-              segs))
-                                                                                            ;
-(define (destroy-segment tm segment)     ;; TM Segment ->
+(define (destroy-segment tm segment)     ;; TM Seg ->
   ;; make segment's flatx available for re-use
   (let* ( (flatx (seg-flatx segment))
           (null-segment (make-seg -1 flatx (make-synapses 0))))
@@ -559,25 +536,18 @@
 (define (cellx->colx tm cellx)           ;; TM CellX -> ColX
   (fxdiv cellx (tm-cells-per-column tm)))
                                                                                             ;
-(define (add-to-pre-index                ;; CellX Segment (CellVecOf {FlatX}) ->
+(define (add-to-pre-index                ;; CellX Seg (CellVecOf {FlatX}) ->
           prex seg pre-index)
   ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
   (let ((pre-list (vector-ref pre-index prex)))
     (when (or (null? pre-list) (not (fx=? (seg-flatx seg) (car pre-list))))
       (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
                                                                                             ;
-(define (get-active-cols tm)             ;; TM -> (listof ColX)
-  (let ((cells (tm-active-cells tm)))
-    (let loop ((previous-colx -1) (active-cols '()) (cx 0))
-      (if (fx<? cx (vector-length cells))
-        (let ((colx (cellx->colx tm (vector-ref cells cx))))
-          (if (fx=? colx previous-colx) 
-              (loop previous-colx active-cols (add1 cx))
-              (loop colx (cons colx active-cols) (add1 cx))))
-        active-cols))))
+(define (get-active-cols tm)             ;; TM -> {ColX}
+  (unique fx=? (map (/cpc tm) (tm-active-cells tm))))
                                                                                             ;
-(define (map-segments-to-cells segments) ;; {Segment} -> {CellX}
-  (list-sort fx<? (map seg-cellx segments)))
+(define (map-segments-to-cells segments) ;; {Seg} -> {CellX}
+  (sort! fx<? (map seg-cellx segments)))
                                                                                             ;
 (define (filter-segments-by-cell         ;; {Seg} {CellX} -> {Seg}
           segments cellxs)
@@ -595,8 +565,7 @@
     segments))
                                                                                             ;
 (define (/cpc tm)                        ;; TM -> (CellX -> ColX)
-  (lambda (cellx) 
-    (fxdiv cellx (tm-cells-per-column tm))))
+  (lambda (cellx) (cellx->colx tm cellx)))
                                                                                             ;
 (define (set-compare tm a b)             ;; TM {CellX} {ColX} -> {CellX} {ColX}
   ;; produce intersection (a&b), difference (b-a), using (a/cpc) for compare
@@ -644,61 +613,55 @@
                 (synapses-set! result rx (synapses-ref syns sx))
                 (loop (add1 rx) (add1 sx) omits) ]))))
                                                                                             ;
-(define  adapt-segment                   ;; TM Seg (vectorof CellX) Connections [(Perm -> Perm) Perm] ->
+(define (adapt-segment tm segment        ;; TM Seg {CellX} Connections Perm Perm ->
+          active-input connections permanence-delta permanence-decrement)
   ;; Updates synapses on segment. Strengthens active synapses; weakens inactive synapses.
   ;; Remove synapse on zero permanence, destroy segment if no synapses left.
-  (case-lambda
-  [(tm segment active-input connections)
-    ;; use increment/decrement parameter values
-    (adapt-segment tm segment active-input connections
-                   (lambda (p) (clip-max (fx+ p (tm-permanence-increment tm))))
-                   (tm-permanence-decrement tm))]
-  [(tm segment active-input connections increment-proc permanence-decrement)
-    ;; general case: increment supplied by proc
-    (let ((synapses (seg-synapses segment)))
-      (let build-s-t-d ((sx (fx- (synapses-length synapses) 1))
-                        (synapses-to-destroy '()))
-        (if (negative? sx)
-            (cond [ (null? synapses-to-destroy) ]
-                  [ (fx=? (length synapses-to-destroy) (synapses-length synapses))
-                      (vector-set! connections (seg-cellx segment)
-                        (remq segment (vector-ref connections (seg-cellx segment))))
-                      (destroy-segment tm segment) ]
-                  [ else (seg-synapses-set! segment 
-                           (prune-synapses synapses synapses-to-destroy)) ])
-            (let* ( (synapse    (synapses-ref synapses sx))
-                    (prex       (syn-prex synapse))
-                    (permanence (if (search active-input prex prex)
-                                  (increment-proc (syn-perm synapse))
-                                  (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
-              (if (zero? permanence)
-                  ;; build synapses-to-destroy indices as sorted list
-                  (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
-                  (begin
-                    (synapses-set! synapses sx (make-syn prex permanence))
-                    (build-s-t-d (fx- sx 1) synapses-to-destroy)))))))]))
+  (let ((synapses (seg-synapses segment)))
+    (let build-s-t-d ((sx (fx- (synapses-length synapses) 1))
+                      (synapses-to-destroy '()))
+      (if (negative? sx)
+          (cond [ (null? synapses-to-destroy) ]
+                [ (fx=? (length synapses-to-destroy) (synapses-length synapses))
+                    (vector-set! connections (seg-cellx segment)
+                      (remq segment (vector-ref connections (seg-cellx segment))))
+                    (destroy-segment tm segment) ]
+                [ else (seg-synapses-set! segment 
+                         (prune-synapses synapses synapses-to-destroy)) ])
+          (let* ( (synapse    (synapses-ref synapses sx))
+                  (prex       (syn-prex synapse))
+                  (permanence (if (fxsearch active-input prex)
+                                (clip-max (clip-min (fx+ (syn-perm synapse) permanence-delta)))
+                                (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
+            (if (zero? permanence)
+                ;; build synapses-to-destroy indices as sorted list
+                (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
+                (begin
+                  (synapses-set! synapses sx (make-syn prex permanence))
+                  (build-s-t-d (fx- sx 1) synapses-to-destroy))))))))
                                                                                             ;
-(define (adjust-synapses tm              ;; TM Connections {Seg} (vectorof CellX) ->
+(define (adjust-synapses tm              ;; TM Connections {Seg} {CellX} ->
           connections segments active-input)
   ;; For each specified segment, update the permanence of each synapse
   ;; according to whether the synapse would be active given the specified
   ;; active inputs.
-  (for-each
-    (lambda (segment)
-      (adapt-segment tm segment (list->vector active-input) connections))
-    segments))
+  (let ((active-input (list->vector active-input))
+        (inc (tm-permanence-increment tm))
+        (dec (tm-permanence-decrement tm)))
+    (for-each
+      (lambda (segment)
+        (adapt-segment tm segment active-input connections inc dec))
+      segments)))
                                                                                             ;
-(define (adjust-active-synapses tm       ;; TM Connections {Seg} {CellX} Permanence ->
+(define (adjust-active-synapses tm       ;; TM Connections {Seg} {CellX} Perm ->
           connections segments active-input permanence-delta)
   ;; For each specified segment, add a delta to the permanences of the
   ;; synapses that would be active given the specified active inputs.
-  (for-each
-    (lambda (segment)
-      (adapt-segment tm segment (list->vector active-input) connections
-                     (lambda (p)
-                       (clip-max (clip-min (fx+ p permanence-delta))))
-                     0))
-    segments))
+  (let ((active-input (list->vector active-input)))
+    (for-each
+      (lambda (segment)
+        (adapt-segment tm segment active-input connections permanence-delta 0))
+      segments)))
                                                                                             ;
 (define (grow-synapses-to-sample tm      ;; TM {Seg} {CellX} Nat|{Nat} (CellVecOf {FlatX}) ->
           segments inputs sample-size pre-index)
@@ -714,13 +677,13 @@
         (grow-synapses tm segment sample-size inputs pre-index))
       segments sample-size)))
                                                                                             ;
-(define (in-synapses? cellx synapses)    ;; CellX (vectorof Synapse) -> Boolean
+(define (in-synapses? cellx synapses)    ;; CellX Synapses -> Boolean
   ;; produce whether cellx equals any pre-synaptic-cell index of synapses
   (let* ( (syn-low  (make-syn cellx min-perm))
           (syn-high (fx+ syn-low max-perm)))
-    (search synapses syn-low syn-high)))
+    (synapses-search synapses syn-low syn-high)))
                                                                                             ;
-(define (grow-synapses                   ;; TM Seg Nat (listof CellX) (CellVecOf {FlatX}) ->
+(define (grow-synapses                   ;; TM Seg Nat {CellX} (CellVecOf {FlatX}) ->
           tm segment n-desired-new-synapses inputs pre-index)
   ;; grow synapses to all inputs that aren't already connected to the segment
   (let* ( (synapses     (seg-synapses segment))
@@ -731,18 +694,18 @@
                                     (loop cs (cdr is)) ]
                                 [ else (loop (cons (car is) cs) (cdr is)) ])))
           (n-actual     (fxmin n-desired-new-synapses (length candidates))))
-      (when (positive? n-actual)
-        (let ((new-prexs (vector-sample (list->vector candidates) n-actual))
-              (init-perm (tm-initial-permanence tm)))
-          (seg-synapses-set! segment     ;; append new synapses to segment
-            (build-synapses (fx+ num-synapses n-actual)
-              (lambda (sx)
-                (if (fx<? sx num-synapses)
-                    (synapses-ref synapses sx)
-                    (let ((new-prex (vector-ref new-prexs (fx- sx num-synapses))))
+    (when (positive? n-actual)
+      (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) n-actual))
+      (let ((new-prexs (vector-sample (list->vector candidates) n-actual))
+            (init-perm (tm-initial-permanence tm)))
+        (seg-synapses-set! segment 
+          (list->fxvector (sort! fx<?
+              (append! (build-list n-actual
+                  (lambda (newx) 
+                    (let ((new-prex (vector-ref new-prexs newx)))
                       (add-to-pre-index new-prex segment pre-index)
-                      (make-syn new-prex init-perm))))))
-          (vector-sort! fx<? (seg-synapses segment))))))
+                      (make-syn new-prex init-perm))))
+                (fxvector->list (seg-synapses segment))))))))))
                                                                                             ;
 (define (create-segment tm               ;; TM CellX Connections -> Seg
           cellx connections)
@@ -760,13 +723,13 @@
       (tm-next-flatx-set! tm (add1 new-flatx))
       (tm-free-flatx-set! tm (cdr (tm-free-flatx tm))))
     (vector-set! connections cellx (cons segment segments))
+    (tm-n-segments-created-set! tm (add1 (tm-n-segments-created tm)))
     segment))
                                                                                             ;
 (define (create-segments tm              ;; TM Connections {CellX} -> {Seg}
           connections cellxs)
-  (map
-    (lambda (cellx)
-      (create-segment tm cellx connections))
+  (map (lambda (cellx)
+          (create-segment tm cellx connections))
     cellxs))
                                                                                             ;
 )

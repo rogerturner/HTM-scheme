@@ -1,6 +1,6 @@
-#!r6rs
+#!chezscheme
 
-;; === HTM-scheme/algorithms/htm_prelude Copyright 2017 Roger Turner. ===
+;; === HTM-scheme/algorithms/htm_prelude Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; This program is free software: you can redistribute it and/or modify  ;;
   ;; it under the terms of the GNU Affero Public License version 3 as      ;;
@@ -37,9 +37,9 @@
   vector-fold-left
   vector-average
   fxvector-max
-  x10k
-  fx10k<-
-  fx10k*
+  fx3
+  fx3<-
+  fx3*
   vector-extend
   vector-take
   vector-count
@@ -52,6 +52,7 @@
   random
   random-seed!
   vector-sample
+  fxsearch
   key-word-args
   intersect1d
   union1d
@@ -59,17 +60,17 @@
   in1d
   include-by-mask
   exclude-by-mask
-  search
   define-memoized)
                                                                                             ;
-(import (rnrs))
+(import
+  (except (chezscheme) add1 make-list random reset))
 
 ;; -- Types --
-;; Boolean, Number, Integer, Fixnum, (listof X), (vectorof X) ... = Scheme types
+;; Boolean, Number, Integer, Fixnum, (Listof X), (Vectorof X) ... = Scheme types
 ;; X, Y, Z  = type parameters (arbitrary types in function type specification etc)
 ;; X Y -> Z = function with argument types X, Y and result type Z; [X] = optional X
 ;; Nat      = natural number (including zero) (Scheme Fixnum or exact Integer)
-;; Fix10k   = Fixnum interpreted as number with 4 decimal places, ie 10000 = 1.0
+;; Fixnum3  = Fixnum interpreted as number with 3 decimal places, ie 1000 = 1.0
 ;; Bits     = Integer (Bignum) interpreted bitwise
 
 (define (add1 n)                         ;; Fixnum -> Fixnum
@@ -82,13 +83,13 @@
 (define (build-list n proc)              ;; Nat (Nat -> X) -> (listof X)
   ;; produce list of n X's by applying proc to 0..n-1
   (let loop [ (i 0) (xs (list))]
-    (cond [(fx=? i n) (reverse xs)]
+    (cond [(fx=? i n) (reverse! xs)]
           [else (loop (add1 i) (cons (proc i) xs))])))
                                                                                             ;
 (define (take n xs)                      ;; Nat (listof X) -> (listof X)
   ;; produce first n elements of xs
   (let loop [ (n n) (xs xs) (ys (list))]
-    (cond [(or (fxzero? n) (null? xs)) (reverse ys)]
+    (cond [(or (fxzero? n) (null? xs)) (reverse! ys)]
           [else (loop (fx- n 1) (cdr xs) (cons (car xs) ys))])))
                                                                                             ;
 (define (list-average l)                 ;; (listof Number) -> Number
@@ -97,10 +98,27 @@
                                                                                             ;
 (define (unique eql? xs)                 ;; (X X -> Boolean) (listof X) -> (listof X)
   ;; produce list with adjacent duplicates by eql? removed
-  (cond [(null? xs) '()]
-        [(null? (cdr xs)) xs]
-        [(eql? (car xs) (cadr xs)) (unique eql? (cdr xs))]
-        [else (cons (car xs) (unique eql? (cdr xs)))]))
+  ;;  (cond [(null? xs) '()]
+  ;;        [(null? (cdr xs)) xs]
+  ;;        [(eql? (car xs) (cadr xs)) (unique eql? (cdr xs))]
+  ;;        [else (cons (car xs) (unique eql? (cdr xs)))]))
+  (if (null? xs)  xs
+    (let loop ((first xs) (next (cdr xs)))
+      (cond
+        [(null? next) xs]
+        [(eql? (car first) (car next))
+          (let skip ((next (cdr next)))
+            (cond
+              [(null? next)
+                (set-cdr! first next)
+                xs]
+              [(eql? (car first) (car next))
+                (skip (cdr next))]
+              [else 
+                (set-cdr! first next)
+                (loop next (cdr next))]))]
+        [else
+          (loop next (cdr next))]))))
                                                                                       ;
 (define (int<- x)                        ;; Number -> Integer
   (exact (round x)))
@@ -152,16 +170,16 @@
   ;; produce max element of vec
   (vector-fold-left fxmax (least-fixnum) vec))
                                                                                             ;
-(define x10k 10000)                      ;; Fixnum                                                                                            
+(define fx3 1000)                        ;; Fixnum                                                                                            
                                                                                             ;
-(define (fx10k<- x)                      ;; [vectorof] Number -> [vectorof] Fix10k
-  ;; produce Fix10k representation of number or vector of numbers
-  (if (vector? x) (vector-map fx10k<- x)
-                  (int<- (* x x10k))))
+(define (fx3<- x)                        ;; [Vectorof] Number -> [Vectorof] Fixnum3
+  ;; produce Fixnum3 representation of number or vector of numbers
+  (if (vector? x) (vector-map fx3<- x)
+                  (int<- (* x fx3))))
                                                                                             ;
-(define (fx10k* x y)                     ;; Fix10k Fix10k -> Fix10k
+(define (fx3* x y)                       ;; Fixnum3 Fixnum3 -> Fixnum3
   ;; produce product
-  (div (+ (* x y) (div x10k 2)) x10k))
+  (div (+ (* x y) (div fx3 2)) fx3))
                                                                                             ;
 (define (vector-extend vec)              ;; (vectorof X) -> (vectorof X)
   ;; increase the size of vec
@@ -217,10 +235,9 @@
               result))))
   ;; this is faster in Chez 9.5 than loop above
   (let loop ((bits bits) (result (list)))
-    (if (positive? bits)
+    (if (zero? bits)  (reverse! result)
       (let ((b (bitwise-first-bit-set bits)))
-        (loop (bitwise-copy-bit bits b 0) (cons b result)))
-      (reverse result)))
+        (loop (bitwise-copy-bit bits b 0) (cons b result)))))
   )
                                                                                             ;
 (define (random n)                       ;; Nat -> Nat
@@ -251,6 +268,16 @@
                   (vector-set! vec r (vector-ref vec n))
                   (vector-set! vec n t))))])))
                                                                                             ;
+(define (fxsearch v target)              ;; (vectorof Fixnum) Fixnum -> Fixnum|#f
+  (let search ((left 0) (right (fx- (vector-length v) 1)))
+    (if (fx>? left right) #f
+      (let* ( (mid (fxdiv (fx+ left right) 2))
+              (element (vector-ref v mid))) 
+        (cond 
+          [ (fx<? element target) (search (add1 mid) right) ]
+          [ (fx<? target element) (search left (fx- mid 1)) ]
+          [else element])))))
+                                                                                            ;
 (define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
   ;; KWarg is [key . value]; produce list of default values overridden by arg values
   (map (lambda (default-kv)
@@ -263,7 +290,7 @@
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(or (null? l1) (null? l2)) (reverse result)]
+    (cond [(or (null? l1) (null? l2)) (reverse! result)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 result)]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) result)]
           [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
@@ -273,9 +300,9 @@
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(and (null? l1) (null? l2)) (reverse result)]
-          [(null? l1) (append (reverse result) l2)]
-          [(null? l2) (append (reverse result) l1)]
+    (cond [(and (null? l1) (null? l2)) (reverse! result)]
+          [(null? l1) (append (reverse! result) l2)]
+          [(null? l2) (append (reverse! result) l1)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l2) result))]
           [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
@@ -285,8 +312,8 @@
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(null? l1) (reverse result)]
-          [(null? l2) (append (reverse result) l1)]
+    (cond [(null? l1) (reverse! result)]
+          [(null? l2) (append (reverse! result) l1)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l1) result))]
           [else (loop (cdr l1) (cdr l2) result)])))
@@ -314,16 +341,6 @@
       (list->vector 
         (bitwise->list
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
-                                                                                            ;
-(define (search syns syn-low syn-high)   ;; (vectorof Synapse) Synapse Synapse -> Synapse|#f
-  (let search ((left 0) (right (fx- (vector-length syns) 1)))
-    (if (fx>? left right) #f
-      (let* ( (mid (fxdiv (fx+ left right) 2))
-              (synapse (vector-ref syns mid))) 
-        (cond 
-          [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
-          [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
-          [else synapse])))))
                                                                                             ;
   ;; List comprehensions from the Programming Praxis standard prelude
   ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)
@@ -391,6 +408,7 @@
                 (exit))) ...)])))
                                                                                             ;
   [expect ( [list-average (list 1 2 27)]  10 )]
+  ;[expect ( [unique fx=? '(1 2 2 3 4 4)] '(1 2 3 4) )]
   [expect ( [build-list 3 -] '(0 -1 -2) )]
   [expect ( [take 2 '(a 2 c)] '(a 2) )]
   [expect ( [make-list 0 9] '()      )
@@ -408,8 +426,8 @@
   [expect ( [vector-fold-left (lambda (s x y) (* s (+ x y))) 1 '#(0 1 2) '#(1 2 3)] 15 )]
   [expect ( [vector-average '#(1 2 5)] 8/3 )]
   [expect ( [fxvector-max '#(0 -3 7 5)] 7 )]
-  [expect ( [fx10k<- '#(1/3 1.0)] '#(3333 10000) )]
-  [expect ( [fx10k* 5000 5000] 2500 )]
+  [expect ( [fx3<- '#(1/3 1.0)] '#(333 1000) )]
+  [expect ( [fx3* 500 500] 250 )]
   [expect ( [vector-take 0 '#(0 1 2 3)] '#()       )
           ( [vector-take 2 '#(0 1 2 3)] '#(0 1)    )
           ( [vector-take 5 '#(0 1 2 3)] '#(0 1 2 3))]

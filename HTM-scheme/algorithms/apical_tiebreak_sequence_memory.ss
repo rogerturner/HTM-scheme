@@ -1,6 +1,6 @@
 #!r6rs
 
-;; === HTM-scheme Apical Tiebreak Sequence Memory Copyright 2017 Roger Turner. ===
+;; === HTM-scheme Apical Tiebreak Sequence Memory Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2017, Numenta, Inc.                            ;;
@@ -36,7 +36,9 @@
   (rename
     (attm:get-active-cells           get-active-cells)
     (attm:get-predicted-cells        get-next-predicted-cells)
-    (attm:get-predicted-active-cells get-predicted-active-cells)))
+    (attm:get-predicted-active-cells get-predicted-active-cells)
+    (attm:tm-n-segments-created      get-n-segments-created)
+    (attm:tm-n-synapses-created      get-n-synapses-created)))
                                                                                             ;
 (import 
   (rnrs)

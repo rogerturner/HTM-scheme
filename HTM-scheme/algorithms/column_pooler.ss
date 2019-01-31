@@ -1,6 +1,6 @@
-#!r6rs
+#!chezscheme
 
-;; === HTM-scheme Column Pooler Copyright 2018 Roger Turner. ===
+;; === HTM-scheme Column Pooler Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2016, Numenta, Inc.                            ;;
@@ -42,11 +42,11 @@
     (cp-proximal-permanences         test:cp-proximal-permanences)))
                                                                                             ;
 (import 
-  (rnrs)
+  (except (chezscheme) add1 make-list random reset)
   (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept))
 
-;; === Parameters and Data ===
+;; === Layer record ===
                                                                                             ;
 (define-record-type cp                   ;; CP
   (fields
@@ -87,9 +87,9 @@
             (cp-min-sdr-size-set! cp (cp-sdr-size cp)))
           (random-seed! (cp-seed cp))
           (cp-proximal-permanences-set! cp
-            (make-vector (cp-cell-count cp) (vector)))
+            (make-vector (cp-cell-count cp) (fxvector)))
           (cp-internal-distal-permanences-set! cp
-            (make-vector (cp-cell-count cp) (vector)))
+            (make-vector (cp-cell-count cp) (fxvector)))
           ;; (distal permanences are allocated when lateral inputs known)
           cp)))))
                                                                                            ;
@@ -154,7 +154,7 @@
                       [ else (prune-synapses synapses synapses-to-destroy) ])
                 (let* ( (synapse    (synapses-ref synapses sx))
                         (prex       (syn-prex synapse))
-                        (permanence (if (search active-input prex prex)
+                        (permanence (if (fxsearch active-input prex)
                                       (clip-max (fx+ (syn-perm synapse) permanence-increment))
                                       (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
                   (if (zero? permanence)
@@ -171,18 +171,19 @@
   (for-each
     (lambda (cellx)
       (let ((synapses (vector-ref permanences cellx)))
-        (let add-synapses [ (all-synapses (vector->list synapses)) 
+        (let add-synapses [ (all-synapses (fxvector->list synapses)) 
                             (inputs active-input) ]
           (if (null? inputs)
-            (vector-set! permanences cellx (list->vector all-synapses))
+            (vector-set! permanences cellx (list->fxvector all-synapses))
             (let* ( (syn-low  (make-syn (car inputs) min-perm))
                     (syn-high (fx+ syn-low max-perm)))
-              (if (search synapses syn-low syn-high)
+              (if (synapses-search synapses syn-low syn-high)
                 (add-synapses all-synapses (cdr inputs))
                 (add-synapses 
                   (cons (make-syn (car inputs) initial-permanence) all-synapses)
                   (cdr inputs))))))
-        (vector-sort! fx<? (vector-ref permanences cellx))))
+        (vector-set! permanences cellx
+          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
     active-cells))
                                                                                             ;
 (define (grow-synapses! permanences      ;; Permanences {CellX} {InputX} {Nat} Perm ->
@@ -196,20 +197,21 @@
                                      (inputs growth-candidates) ]
             (if (null? inputs)
               (vector-set! permanences cellx
-                (list->vector 
+                (list->fxvector 
                   (append
-                    (vector->list synapses)
+                    (fxvector->list synapses)
                     (if (fx<? max-new (length new-synapses))
                         (vector->list (vector-sample (list->vector new-synapses) max-new))
                         new-synapses))))
               (let* ( (syn-low  (make-syn (car inputs) min-perm))
                       (syn-high (fx+ syn-low max-perm)))
-                (if (search synapses syn-low syn-high)
+                (if (synapses-search synapses syn-low syn-high)
                   (choose-new-synapses new-synapses (cdr inputs))
                   (choose-new-synapses 
                     (cons (make-syn (car inputs) initial-permanence) new-synapses)
                     (cdr inputs)))))))
-        (vector-sort! fx<? (vector-ref permanences cellx))))
+        (vector-set! permanences cellx
+          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
     active-cells max-news))
                                                                                             ;
 (define (max-new-by-cell permanences     ;; Permanences {CellX} {InputX} Nat -> {Nat}
@@ -240,7 +242,7 @@
       (lambda (synapses)
         (vector-fold-left
           (lambda (overlaps syn-low syn-high)
-            (let ((synapse (search synapses syn-low syn-high)))
+            (let ((synapse (synapses-search synapses syn-low syn-high)))
               (if (and synapse (fx>=? (syn-perm synapse) threshold))
                   (add1 overlaps)
                   overlaps)))
@@ -264,7 +266,7 @@
         lateral-inputs feedforward-growth-candidates learn predicted-input)
       (when (fx<? (length (cp-distal-permanences cp)) (length lateral-inputs))
         (cp-distal-permanences-set! cp
-          (make-list (length lateral-inputs) (make-vector (cp-cell-count cp) (vector)))))
+          (make-list (length lateral-inputs) (make-vector (cp-cell-count cp) (fxvector)))))
       (let ((feedforward-growth-candidates
               (if (null? feedforward-growth-candidates) feedforward-input
                   feedforward-growth-candidates)))
@@ -465,7 +467,7 @@
                            result)) ]
       ((negative? vx) result)))
                                                                                             ;
-(define (increment-where! cs pred xs y)  ;; (vectorof Nat) (X Y -> Boolean) (vectorof X) Y ->
+(define (increment-where! cs pred xs y)  ;; (Vectorof Nat) (X Y -> Boolean) (Vectorof X) Y ->
   ;; mutates cs, incrementing elements corresponding to xs for which (pred x y)
   (do [ (vx 0 (add1 vx)) ]
       ((fx=? vx (vector-length xs)))
