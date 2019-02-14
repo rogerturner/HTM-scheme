@@ -15,6 +15,37 @@
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  ;; A Patch represents an array of cortical columns constructed from layers
+  ;; ("algorithms") with defined interconnections. Inputs are provided as
+  ;; arguments to a compute procedure; layer outputs can be accessed.
+  ;;
+  ;; This L2L4TM patch is part of the combined_sequences project, and is
+  ;; derived from numenta htmresearch/.../combined_sequence_experiment.py,
+  ;; combined_sequence_network_creation.py, and l2_l4_inference.py
+  
+  #|      L2L4TM cortical column
+          ----------------------
+  
+                    +--------------------<- other L2 cc's active cells
+                    v                       (from previous time step)
+           +--------li--+
+           |  L2 (colp) |                   ... other columns
+           +--ff----ac--+                    
+              ^     v     
+              |     +---------------------> other L2 cc's lateral inputs     
+              ^     v                       (for next time step)
+           +--ac----ai--+  +-----------+
+      +--->bi L4 (atpm) |  | TM (atsm) |    L4 predicted cells ->
+      |    +--ff--------+  +--ff-------+        L2 growth candidates
+      |       ^               ^       
+      |       |               |             ac = active cells
+      |       +---------------+             ff = feedforward
+      |               |                     bi = basal input
+      ^               ^                     ai = apical input
+   location        feature                  li = lateral input
+
+   |#
+  
 (library (HTM-scheme HTM-scheme algorithms l2l4tm_patch)
                                                                                             ;
 (export
@@ -155,7 +186,7 @@
           (patch-L2s patch) (patch-L2-prev-actives patch)))
         (atpm:get-predicted-cells L4)  ;; feedforward growth candidates
         learn
-        (atpm:get-predicted-cells L4)))                          ;; predicted input
+        (atpm:get-predicted-cells L4))) ;; predicted input
                                                                                             ;
 #;> (define (L4L2-thread)
       (compute-L4L2
