@@ -23,6 +23,22 @@
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
+#| Selected comments from htmresearch/.../apical_tiebreak_temporal_memory.py:                                                                                       ;
+
+  A generalized Temporal Memory with apical dendrites that add a "tiebreak".
+
+  Basal connections are used to implement traditional Temporal Memory.
+
+  The apical connections are used for further disambiguation. If multiple cells
+  in a minicolumn have active basal segments, each of those cells is predicted,
+  unless one of them also has an active apical segment, in which case only the
+  cells with active basal and apical segments are predicted.
+
+  In other words, the apical connections have no effect unless the basal input
+  is a union of SDRs (e.g. from bursting minicolumns).
+
+  |#
+  
 (library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
                                                                                             ;
 (export
@@ -343,31 +359,38 @@
 (define (calculate-predicted-cells tm    ;; TM {Seg} {Seg} -> {CellX}
           active-basal-segments active-apical-segments)
   ;; Calculate the predicted cells, given the set of active segments.
+  ;;  An active basal segment is enough to predict a cell.
+  ;;  An active apical segment is *not* enough to predict a cell.
+  ;;  When a cell has both types of segments active, other cells in its minicolumn
+  ;;  must also have both types of segments to be considered predictive.
   (let* ( (cells-for-basal-segments  (map-segments-to-cells active-basal-segments))
           (cells-for-apical-segments (map-segments-to-cells active-apical-segments))
           (fully-depolarized-cells       ;; cells with both types of segments active
             (intersect1d cells-for-basal-segments cells-for-apical-segments))
           (partly-depolarized-cells      ;; cells with basal only
             (setdiff1d cells-for-basal-segments fully-depolarized-cells))
+
+          (cells-in-cols-with-fully-depolarized-cell
+            (get-all-cells-in-columns tm (map (/cpc tm) fully-depolarized-cells)))
+          (cells-in-cols-with-partly-depolarized-cell
+            (get-all-cells-in-columns tm (map (/cpc tm) partly-depolarized-cells)))
           (inhibited-mask
-            (in1d 
-              (map (/cpc tm) partly-depolarized-cells)
-              (map (/cpc tm) fully-depolarized-cells)))
+            (in1d cells-in-cols-with-partly-depolarized-cell
+                  cells-in-cols-with-fully-depolarized-cell))
+
           (predicted-cells
             (if (tm-use-apical-tiebreak tm)
-              (list-sort fx<?
-                (append fully-depolarized-cells
-                        (exclude-by-mask partly-depolarized-cells inhibited-mask)))
-                cells-for-basal-segments)))
+              (sort! fx<?
+                (append! fully-depolarized-cells
+                         (exclude-by-mask partly-depolarized-cells inhibited-mask)))
+              cells-for-basal-segments)))
     predicted-cells))
                                                                                             ;
 (define (learn tm connections            ;; TM Connections {Seg} {CellX} {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
           learning-segments active-input growth-candidates potential-overlaps pre-index)
-  ;; Adjust synapse permanences, grow new synapses, and grow new segments.
+  ;; for learning-segments, adjust active/in~ synapses and create new synapses from growth-candidates
   (adjust-synapses tm connections learning-segments active-input)
-  ;; Grow new synapses. Calculate "maxNew", the maximum number of synapses to
-  ;; grow per segment. "maxNew" might be a number or it might be a list of numbers.
-  (let ((max-new
+  (let ((max-new                         ;; Nat | (Listof Nat)
           (if (fx=? -1 (tm-sample-size tm))
             (length growth-candidates)
             (map
@@ -393,6 +416,7 @@
                                                                                             ;
 (define (learn-on-new-segments tm        ;; TM Connections {CellX} {CellX} (CellVecOf {FlatX}) ->
           connections new-segment-cells growth-candidates pre-index)
+  ;; for new-segment-cells, create new segments with new synapses from growth-candidates
   (let* ( (num-new-synapses (length growth-candidates))
           (num-new-synapses (if (fx=? -1 (tm-sample-size tm))
                               num-new-synapses
@@ -547,7 +571,7 @@
   (unique fx=? (map (/cpc tm) (tm-active-cells tm))))
                                                                                             ;
 (define (map-segments-to-cells segments) ;; {Seg} -> {CellX}
-  (sort! fx<? (map seg-cellx segments)))
+  (unique fx=? (sort! fx<? (map seg-cellx segments))))
                                                                                             ;
 (define (filter-segments-by-cell         ;; {Seg} {CellX} -> {Seg}
           segments cellxs)
