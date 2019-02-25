@@ -25,6 +25,87 @@
   ;;  creating a cleaner implementation." [Numenta description]
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
 
+#| Selected comments from htmresearch/.../column_pooler.py:                                                                                       ;
+
+  maxSdrSize
+    The maximum SDR size for learning.  If the column pooler has more
+    than this many cells active, it will refuse to learn.  This serves
+    to stop the pooler from learning when it is uncertain of what object
+    it is sensing.
+
+  minSdrSize
+    The minimum SDR size for learning.  If the column pooler has fewer
+    than this many active cells, it will create a new representation
+    and learn that instead.  This serves to create separate
+    representations for different objects and sequences.
+    If online learning is enabled, this parameter should be at least
+    inertiaFactor*sdrSize.  Otherwise, two different objects may be
+    incorrectly inferred to be the same, as SDRs may still be active
+    enough to learn even after inertial decay.
+
+  sampleSizeProximal
+    Number of proximal synapses a cell should grow to each feedforward
+    pattern, or -1 to connect to every active bit
+
+  predictedInhibitionThreshold
+    How much predicted input must be present for inhibitory behavior
+    to be triggered.  Only has effects if onlineLearning is true.
+
+  sampleSizeDistal
+    Number of distal synapses a cell should grow to each lateral
+    pattern, or -1 to connect to every active bit
+
+  inertiaFactor
+    The proportion of previously active cells that remain
+    active in the next timestep due to inertia (in the absence of
+    inhibition).  If onlineLearning is enabled, should be at most
+    1 - learningTolerance, or representations may incorrectly become
+    mixed.
+    
+  Learning mode: we are learning a new object in an online fashion. If there
+  is no prior activity, we randomly activate 'sdrSize' cells and create
+  connections to incoming input. If there was prior activity, we maintain it.
+  If we have a union, we simply do not learn at all.
+  These cells will represent the object and learn distal connections to each
+  other and to lateral cortical columns.
+  
+    # If there are not enough previously active cells, then we are no longer on
+    # a familiar object.  Either our representation decayed due to the passage
+    # of time (i.e. we moved somewhere else) or we were mistaken.  Either way,
+    # create a new SDR and learn on it.
+    # This case is the only way different object representations are created.
+    # enforce the active cells in the output layer
+    # If we have a union of cells active, don't learn.  This primarily affects
+    # online learning.
+
+  Inference mode: if there is some feedforward activity, perform
+  spatial pooling on it to recognize previously known objects, then use
+  lateral activity to activate a subset of the cells with feedforward
+  support. If there is no feedforward activity, use lateral activity to
+  activate a subset of the previous active cells.
+
+    # First, activate the FF-supported cells that have the highest number of
+    # lateral active segments (as long as it's not 0)
+    # If we haven't filled the sdrSize quorum, add in inertial cells.
+    # We sort the previously-active cells by number of active lateral
+    # segments (this really helps).  We then activate them in order of
+    # descending lateral activation.
+    # We use inertiaFactor to limit the number of previously-active cells
+    # which can become active, forcing decay even if we are below quota.
+    # Activate groups of previously active cells by order of their lateral
+    # support until we either meet quota or run out of cells.
+    (on first touch activate all with feedforward support):
+    # If we haven't filled the sdrSize quorum, add cells that have feedforward
+    # support and no lateral support.
+    # Inhibit cells proportionally to the number of cells that have already
+    # been chosen. If ~0 have been chosen activate ~all of the feedforward
+    # supported cells. If ~sdrSize have been chosen, activate very few of
+    # the feedforward supported cells.
+    # Use the discrepancy:sdrSize ratio to determine the number of cells to
+    # activate.
+
+  |#
+
 (library (HTM-scheme HTM-scheme algorithms column_pooler)
                                                                                             ;
 (export
@@ -279,8 +360,8 @@
                     (predicted-growth-candidates
                       (intersect1d feedforward-growth-candidates predicted-input)))
                 (compute-inference-mode cp predicted-active-input lateral-inputs)
-                (compute-learning-mode cp predicted-active-input lateral-inputs 
-                                          feedforward-growth-candidates)) ]
+                (compute-learning-mode cp predicted-active-input lateral-inputs
+                                          predicted-growth-candidates)) ]  ; .py has feedforward-growth-candidates ?!
             [(not (fx<=? (cp-min-sdr-size cp)
                          (length (cp-active-cells cp))
                          (cp-max-sdr-size cp)))
@@ -422,13 +503,13 @@
   (let ((threshold (cp-connected-permanence-proximal cp)))
     (fold-left
       (lambda (total cellx)
-        (vector-fold-left
+        (fold-left
           (lambda (total synapse)
             (if (fx>=? (syn-perm synapse) threshold)
               (add1 total)
               total))
           total
-          (vector-ref (cp-proximal-permanences cp) cellx)))
+          (fxvector->list (vector-ref (cp-proximal-permanences cp) cellx))))
       0
       cells)))
                                                                                             ;

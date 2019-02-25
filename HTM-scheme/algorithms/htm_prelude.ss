@@ -289,7 +289,7 @@
   ;; produce intersection of sorted lists of fixnums
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
-  (let loop ((l1 l1) (l2 l2) (result (list)))
+  (let loop ((l1 (unique fx=? l1)) (l2 (unique fx=? l2)) (result (list)))
     (cond [(or (null? l1) (null? l2)) (reverse! result)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 result)]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) result)]
@@ -300,7 +300,7 @@
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(and (null? l1) (null? l2)) (reverse! result)]
+    (cond [(and (null? l1) (null? l2)) (unique fx=? (reverse! result))]
           [(null? l1) (append (reverse! result) l2)]
           [(null? l2) (append (reverse! result) l1)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
@@ -311,7 +311,7 @@
   ;; produce difference of sorted lists of fixnums
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
-  (let loop ((l1 l1) (l2 l2) (result (list)))
+  (let loop ((l1 (unique fx=? l1)) (l2 (unique fx=? l2)) (result (list)))
     (cond [(null? l1) (reverse! result)]
           [(null? l2) (append (reverse! result) l1)]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]

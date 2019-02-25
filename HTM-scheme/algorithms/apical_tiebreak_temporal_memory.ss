@@ -90,7 +90,7 @@
     use-apical-modulation-basal-threshold ;; Boolean
     (mutable basal-connections)          ;; (CellVecOf (listof Segment))
     (mutable apical-connections)         ;; (CellVecOf (listof Segment))
-    (mutable active-cells)               ;; (vectorof CellX)
+    (mutable active-cells)               ;; (listof CellX)
     (mutable winner-cells)               ;; (listof CellX)
     (mutable predicted-cells)            ;; (listof CellX)
     (mutable predicted-active-cells)     ;; (listof CellX) 
@@ -179,7 +179,7 @@
   (let-values ([(active-apical-segments matching-apical-segments apical-potential-overlaps)
                 (calculate-apical-segment-activity tm apical-input)])
     (let ((reduced-basal-threshold-cells
-            (if (or learn (tm-use-apical-modulation-basal-threshold tm))
+            (if (or learn (not (tm-use-apical-modulation-basal-threshold tm)))
               '()
               (map-segments-to-cells active-apical-segments))))
       (let-values ([(active-basal-segments matching-basal-segments basal-potential-overlaps)
@@ -281,10 +281,11 @@
                   matching-basal-segments basal-potential-overlaps))
               (new-basal-segment-cells
                 (get-cells-with-fewest-segments tm bursting-columns-with-no-match))
-              (learning-cells (list-sort fx<?
-                (append correct-predicted-cells
-                        (map-segments-to-cells learning-matching-basal-segments)
-                        new-basal-segment-cells)))
+              (learning-cells 
+                (unique fx=? (sort! fx<?
+                  (append correct-predicted-cells
+                          (map-segments-to-cells learning-matching-basal-segments)
+                          new-basal-segment-cells))))
               ;; Incorrectly predicted columns
               (correct-matching-basal-mask
                 (in1d (map (/cpc tm) cells-for-matching-basal) active-columns))
@@ -355,10 +356,10 @@
               (map (/cpc tm) fully-depolarized-cells)))
           (predicted-cells
             (if (tm-use-apical-tiebreak tm)
-              (list-sort fx<?
-                (append fully-depolarized-cells
+              (sort! fx<?
+                (append! fully-depolarized-cells
                         (exclude-by-mask partly-depolarized-cells inhibited-mask)))
-                cells-for-basal-segments)))
+              cells-for-basal-segments)))
     predicted-cells))
                                                                                             ;
 (define (learn tm connections            ;; TM Connections {Seg} {CellX} {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
@@ -367,37 +368,35 @@
   (adjust-synapses tm connections learning-segments active-input)
   ;; Grow new synapses. Calculate "maxNew", the maximum number of synapses to
   ;; grow per segment. "maxNew" might be a number or it might be a list of numbers.
-  (let ((max-new
-          (if (fx=? -1 (tm-sample-size tm))
-            (length growth-candidates)
-            (map
-              (lambda (segment)
-                (fx- (tm-sample-size tm) (fxvector-ref potential-overlaps (seg-flatx segment))))
-              learning-segments))))
-    (let ((max-new
-            (if (fx=? -1 (tm-max-synapses-per-segment tm))
-              max-new
-              (let* ((synapse-counts
-                       (map-segments-to-synapse-counts learning-segments))
-                     (num-synapses-to-reach-max
-                       (map fx- 
-                          (make-list (length synapse-counts) (tm-max-synapses-per-segment tm))
-                          synapse-counts)))
-                (map
-                  (lambda (mn nstrm)
-                    (if (fx<=? mn nstrm)
-                      mn
-                      nstrm))
-                  max-new num-synapses-to-reach-max)))))
-      (grow-synapses-to-sample tm learning-segments growth-candidates max-new pre-index))))
+  (let* ( (ss (tm-sample-size tm))
+          (max-new
+            (if (fxnegative? ss)
+              (length growth-candidates)
+              (map (lambda (seg)
+                  (fx- ss (fxvector-ref potential-overlaps (seg-flatx seg))))
+                learning-segments)))
+          (msps (tm-max-synapses-per-segment tm))
+          (max-new
+              (if (fxnegative? msps)
+                max-new
+                (if (fxnegative? ss)
+                  (map (lambda (seg)
+                      (fxmin max-new
+                        (fx- msps (synapses-length (seg-synapses seg)))))
+                    learning-segments)
+                  (map (lambda (seg m-n)
+                      (fxmin m-n
+                        (fx- msps (synapses-length (seg-synapses seg)))))
+                    learning-segments max-new)))))
+      (grow-synapses-to-sample tm learning-segments growth-candidates max-new pre-index)))
                                                                                             ;
 (define (learn-on-new-segments tm        ;; TM Connections {CellX} {CellX} (CellVecOf {FlatX}) ->
           connections new-segment-cells growth-candidates pre-index)
   (let* ( (num-new-synapses (length growth-candidates))
-          (num-new-synapses (if (fx=? -1 (tm-sample-size tm))
+          (num-new-synapses (if (fxnegative? (tm-sample-size tm))
                               num-new-synapses
                               (fxmin num-new-synapses (tm-sample-size tm))))
-          (num-new-synapses (if (fx=? -1 (tm-max-synapses-per-segment tm))
+          (num-new-synapses (if (fxnegative? (tm-max-synapses-per-segment tm))
                               num-new-synapses
                               (fxmin num-new-synapses (tm-max-synapses-per-segment tm))))
           (new-segments (create-segments tm connections new-segment-cells)))
@@ -430,8 +429,7 @@
   (let* ( (candidate-segments
             (filter-segments-by-cell all-matching-segments matching-cells))
           (cell-scores
-            (map
-              (lambda (segment)
+            (map (lambda (segment)
                 (fxvector-ref potential-overlaps (seg-flatx segment)))
               candidate-segments))
           (columns-for-candidates
@@ -447,8 +445,7 @@
           tm columnxs)
   ;; For each column, get the cell that has the fewest total basal segments.
   ;; Break ties randomly.
-  (map
-    (lambda (colx)
+  (map (lambda (colx)
       (let loop ((cellx (fx* colx (tm-cells-per-column tm)))
                  (candidate-cells '())
                  (fewest-segs (greatest-fixnum)))
@@ -507,12 +504,10 @@
               (set! potsegs (cons (vector-ref segments segx) potsegs)))
             (fxvector-set! napsfs segx new-napsfs))
           (update-actsegs segx synapse))))
-    (for-each
-      (lambda (cellx)
+    (for-each (lambda (cellx)
         (let* ((syn-low  (make-syn cellx min-perm))
                (syn-high (fx+ syn-low max-perm)))
-          (for-each
-            (lambda (segx)
+          (for-each (lambda (segx)
               (update-potsegs segx syn-low syn-high))
             (vector-ref pre-index cellx))))
       active-input)
@@ -543,9 +538,6 @@
     (when (or (null? pre-list) (not (fx=? (seg-flatx seg) (car pre-list))))
       (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
                                                                                             ;
-(define (get-active-cols tm)             ;; TM -> {ColX}
-  (unique fx=? (map (/cpc tm) (tm-active-cells tm))))
-                                                                                            ;
 (define (map-segments-to-cells segments) ;; {Seg} -> {CellX}
   (sort! fx<? (map seg-cellx segments)))
                                                                                             ;
@@ -559,8 +551,7 @@
                                                                                             ;
 (define (map-segments-to-synapse-counts  ;; {Seg} -> {Nat}
           segments)
-  (map
-    (lambda (segment)
+  (map (lambda (segment)
       (synapses-length (seg-synapses segment)))
     segments))
                                                                                             ;
@@ -595,8 +586,7 @@
   ;; Calculate all cell indices in the specified columns.
   (let ((cpc (tm-cells-per-column tm)))
     (apply append 
-      (map
-        (lambda (colx)
+      (map (lambda (colx)
           (let ((first (fx* colx cpc)))
             (build-list cpc (lambda (i) (fx+ first i)))))
         colxs))))
@@ -648,8 +638,7 @@
   (let ((active-input (list->vector active-input))
         (inc (tm-permanence-increment tm))
         (dec (tm-permanence-decrement tm)))
-    (for-each
-      (lambda (segment)
+    (for-each (lambda (segment)
         (adapt-segment tm segment active-input connections inc dec))
       segments)))
                                                                                             ;
@@ -658,8 +647,7 @@
   ;; For each specified segment, add a delta to the permanences of the
   ;; synapses that would be active given the specified active inputs.
   (let ((active-input (list->vector active-input)))
-    (for-each
-      (lambda (segment)
+    (for-each (lambda (segment)
         (adapt-segment tm segment active-input connections permanence-delta 0))
       segments)))
                                                                                             ;
@@ -668,12 +656,10 @@
   ;; For each segment, grow synapses to a random subset of the
   ;; inputs that aren't already connected to the segment.
   (if (fixnum? sample-size)
-    (for-each
-      (lambda (segment)
+    (for-each (lambda (segment)
         (grow-synapses tm segment sample-size inputs pre-index))
       segments)
-    (for-each
-      (lambda (segment sample-size)
+    (for-each (lambda (segment sample-size)
         (grow-synapses tm segment sample-size inputs pre-index))
       segments sample-size)))
                                                                                             ;
@@ -729,7 +715,7 @@
 (define (create-segments tm              ;; TM Connections {CellX} -> {Seg}
           connections cellxs)
   (map (lambda (cellx)
-          (create-segment tm cellx connections))
+      (create-segment tm cellx connections))
     cellxs))
                                                                                             ;
 )
