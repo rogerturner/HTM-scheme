@@ -132,7 +132,8 @@
   (create-basal-synapses tm active-segment '(0 1 2 81))
   (atsm:compute tm '(0) #t)
   (atsm:compute tm '(1) #t)
-  [expect ((vector-map syn-perm (synapses->vector [seg-synapses active-segment])) '#(6000 6000 6000 4200))])
+  [expect ( (vector-map syn-perm (synapses->vector [seg-synapses active-segment]))
+            (vector (perm .6) (perm .6) (perm .6) (perm .42)))])
                                                                                             ;
 (test "ReinforceSelectedMatchingSegmentInBurstingColumn")
   (let* ( (tm (make-test-tm `(
@@ -144,7 +145,8 @@
   (create-basal-synapses tm other-matching-segment    '(0 1 81))
   (atsm:compute tm '(0) #t)
   (atsm:compute tm '(1) #t)
-  [expect ((vector-map syn-perm (synapses->vector [seg-synapses selected-matching-segment])) '#(4000 4000 4000 2200))])
+  [expect ( (vector-map syn-perm (synapses->vector [seg-synapses selected-matching-segment]))
+            (vector (perm .4) (perm .4) (perm .4) (perm .22)))])
                                                                                           ;
 (test "NoChangeToNonselectedMatchingSegmentsInBurstingColumn")
   (let* ( (tm (make-test-tm `(
@@ -156,23 +158,27 @@
   (create-basal-synapses tm other-matching-segment    '(0 1 81))
   (atsm:compute tm '(0) #t)
   (atsm:compute tm '(1) #t)
-  [expect ((vector-map syn-perm (synapses->vector [seg-synapses other-matching-segment])) '#(3000 3000 3000))])
+  [expect ( (vector-map syn-perm (synapses->vector [seg-synapses other-matching-segment]))
+            (vector (perm .3) (perm .3) (perm .3)))])
                                                                                           ;
 (test "NoChangeToMatchingSegmentsInPredictedActiveColumn")
   (let* ( (tm (make-test-tm))
-        (active-segment (create-basal-segment tm 4))
-        (matching-segment-on-same-cell  (create-basal-segment tm 4))
-        (matching-segment-on-other-cell (create-basal-segment tm 5)))
+          (active-segment (create-basal-segment tm 4))
+          (matching-segment-on-same-cell  (create-basal-segment tm 4))
+          (matching-segment-on-other-cell (create-basal-segment tm 5))
+          (synapses (synapses: (make-syn 0 (perm .3)) (make-syn 1 (perm .3)))))
   (create-basal-synapses tm active-segment '(0 1 2 3))
   (create-basal-synapses tm matching-segment-on-same-cell '(0 1))
-  (seg-synapses-set! matching-segment-on-same-cell (synapses: (make-syn 0 3000) (make-syn 1 3000)))
+  (seg-synapses-set! matching-segment-on-same-cell synapses)
   (create-basal-synapses tm matching-segment-on-other-cell '(0 1))
-  (seg-synapses-set! matching-segment-on-other-cell (synapses: (make-syn 0 3000) (make-syn 1 3000)))
+  (seg-synapses-set! matching-segment-on-other-cell synapses)
   (atsm:compute tm '(0) #t)
   (atsm:compute tm '(1) #t)
-  [expect ([atsm:get-predicted-cells tm] '(4))
-          ((vector-map syn-perm (synapses->vector [seg-synapses matching-segment-on-same-cell]))  '#(3000 3000))
-          ((vector-map syn-perm (synapses->vector [seg-synapses matching-segment-on-other-cell])) '#(3000 3000))])
+  [expect ( [atsm:get-predicted-cells tm] '(4))
+          ( (vector-map syn-perm (synapses->vector [seg-synapses matching-segment-on-same-cell]))
+            (vector (perm .3) (perm .3)))
+          ( (vector-map syn-perm (synapses->vector [seg-synapses matching-segment-on-other-cell]))
+            (vector (perm .3) (perm .3)))])
                                                                                           ;
 (test "NoNewSegmentIfNotEnoughWinnerCells")
   (let* ( (tm (make-test-tm `(
@@ -196,7 +202,7 @@
               ((synapses-length synapses) 2)]
       (vector-for-each
         (lambda (synapse)
-          [expect ((syn-perm synapse) 2100)
+          [expect ((syn-perm synapse) (perm .21))
                   ((not (member (syn-prex synapse) prev-winner-cells)) #f)])
         (synapses->vector synapses)))))
                                                                                           ;
@@ -215,7 +221,7 @@
               ((synapses-length synapses) 3)]
       (vector-for-each
         (lambda (synapse)
-          [expect ((syn-perm synapse) 2100)
+          [expect ((syn-perm synapse) (perm .21))
                   ((not (member (syn-prex synapse) prev-winner-cells)) #f)])
         (synapses->vector synapses))
       [expect ((vector->list (vector-map syn-prex (synapses->vector synapses))) prev-winner-cells)])))
@@ -228,16 +234,16 @@
                 [initial-permanence . ,(perm 0.21)])))
         (matching-segment (create-basal-segment tm 4)))
   (create-basal-synapses tm matching-segment '(0))
-  (seg-synapses-set! matching-segment (synapses: (make-syn 0 5000)))
+  (seg-synapses-set! matching-segment (synapses: (make-syn 0 (perm .5))))
   (atsm:compute tm '(0 1 2 3) #t)
   [expect ([attm:get-winner-cells tm] '(0 1 2 3))]
   (atsm:compute tm '(4) #t)
   (let* ( (synapses (seg-synapses matching-segment)))
     [expect ((synapses-length synapses) 3)]
     (when (= (synapses-length synapses) 3)
-      [expect ((syn-perm (synapses-ref synapses 1)) 2100)
+      [expect ((syn-perm (synapses-ref synapses 1)) (perm .21))
               ((not (member (syn-prex (synapses-ref synapses 1)) '(1 2 3))) #f)
-              ((syn-perm (synapses-ref synapses 2)) 2100)
+              ((syn-perm (synapses-ref synapses 2)) (perm .21))
               ((not (member (syn-prex (synapses-ref synapses 2)) '(1 2 3))) #f)])))
                                                                                           ;
 (test "MatchingSegmentAddSynapsesToAllWinnerCells")
@@ -248,14 +254,14 @@
                 [initial-permanence . ,(perm 0.21)])))
           (matching-segment (create-basal-segment tm 4)))
   (create-basal-synapses tm matching-segment '(0))
-  (seg-synapses-set! matching-segment (synapses: (make-syn 0 5000)))
+  (seg-synapses-set! matching-segment (synapses: (make-syn 0 (perm .5))))
   (atsm:compute tm '(0 1) #t)
   [expect ([attm:get-winner-cells tm] '(0 1))]
   (atsm:compute tm '(4) #t)
   (let ((synapses (seg-synapses matching-segment)))
     [expect ((synapses-length synapses) 2)]
     (when (= (synapses-length synapses) 2)
-      [expect ((syn-perm (synapses-ref synapses 1)) 2100)
+      [expect ((syn-perm (synapses-ref synapses 1)) (perm .21))
               ((not (member (syn-prex (synapses-ref synapses 1)) '(1 2 3))) #f)])))
                                                                                           ;
 (test "ActiveSegmentGrowSynapsesAccordingToPotentialOverlap")
@@ -268,13 +274,14 @@
                 [initial-permanence . ,(perm 0.21)])))
           (active-segment (create-basal-segment tm 5)))
   (create-basal-synapses tm active-segment '(0 1 2))
-  (seg-synapses-set! active-segment (synapses: (make-syn 0 5000) (make-syn 1 5000) (make-syn 2 2000)))
+  (seg-synapses-set! active-segment
+    (synapses: (make-syn 0 (perm .5)) (make-syn 1 (perm .5)) (make-syn 2 (perm .2))))
   (atsm:compute tm '(0 1 2 3 4) #t)
   [expect ([attm:get-winner-cells tm] '(0 1 2 3 4))]
   (atsm:compute tm '(5) #t)
   (let* ( (synapses (seg-synapses active-segment)))
     [expect ((synapses-length synapses) 4)
-            ((syn-perm (synapses-ref synapses 3)) 2100)
+            ((syn-perm (synapses-ref synapses 3)) (perm .21))
             ((not (member (syn-prex (synapses-ref synapses 3)) '(3 4))) #f)]))
                                                                                           ;
   ;; flush any test failures

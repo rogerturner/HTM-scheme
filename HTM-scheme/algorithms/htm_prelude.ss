@@ -234,7 +234,12 @@
               (cons index result)
               result))))
   ;; this is faster in Chez 9.5 than loop above
-  (let loop ((bits bits) (result (list)))
+  ;; negative bits (infinite 1s) is clipped to fixnum range!
+  (let loop (
+        (bits (if (negative? bits)
+                  (bitwise-and bits (greatest-fixnum))
+                  bits))
+        (result (list)))
     (if (zero? bits)  (reverse! result)
       (let ((b (bitwise-first-bit-set bits)))
         (loop (bitwise-copy-bit bits b 0) (cons b result)))))

@@ -120,6 +120,11 @@
   (rename
     (num-connected-proximal-synapses test:num-connected-proximal-synapses)
     (number-of-proximal-synapses     test:number-of-proximal-synapses)
+    (number-of-proximal-segments     test:number-of-proximal-segments)
+    (number-of-distal-synapses       test:number-of-distal-synapses)
+    (number-of-distal-segments       test:number-of-distal-segments)
+    (cp-min-sdr-size                 test:cp-min-sdr-size)
+    (cp-max-sdr-size                 test:cp-max-sdr-size)
     (cp-proximal-permanences         test:cp-proximal-permanences)))
                                                                                             ;
 (import 
@@ -513,15 +518,35 @@
       0
       cells)))
                                                                                             ;
-(define (number-of-proximal-synapses     ;; CP {CellX} -> Nat
-          cp cells)
+(define  number-of-proximal-synapses     ;; CP {CellX} -> Nat
   ;; produce total count of synapses for cells
-  (fold-left
-    (lambda (total cellx)
-      (fx+ total
-         (synapses-length (vector-ref (cp-proximal-permanences cp) cellx))))
+  (case-lambda 
+    [(cp)
+      (number-of-proximal-synapses cp (build-list (cp-cell-count cp) id))]
+    [(cp cells)
+      (fold-left
+        (lambda (total cellx)
+          (fx+ total
+             (synapses-length (vector-ref (cp-proximal-permanences cp) cellx))))
+        0
+        cells)]))
+                                                                                            ;
+(define (number-of-proximal-segments cp) ;; CP -> Nat
+  (vector-count (lambda (seg)
+      (fxpositive? (synapses-length seg)))
+    (cp-proximal-permanences cp)))
+                                                                                            ;
+(define (number-of-distal-synapses cp)   ;; CP -> Nat
+  ;; produce total count of synapses for cells
+  (vector-fold-left (lambda (total seg)
+      (fx+ total (synapses-length seg)))
     0
-    cells))
+    (cp-internal-distal-permanences cp)))
+                                                                                            ;
+(define (number-of-distal-segments cp)   ;; CP -> Nat
+  (vector-count (lambda (seg)
+      (fxpositive? (synapses-length seg)))
+    (cp-internal-distal-permanences cp)))
                                                                                             ;
 (define (reset cp)                       ;; CP ->
   ;; when learning this signifies we are to learn a unique new object

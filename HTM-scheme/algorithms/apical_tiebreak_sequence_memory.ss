@@ -55,10 +55,11 @@
   (protocol
     (lambda (pargs->new)                 ;; (listof KWarg) -> TM
       (lambda (kwargs)
-        (let ((tm (apply (pargs->new kwargs)
-                         (key-word-args kwargs atsm-defaults))))
-          (attm:tm-basal-input-size-set! tm (* (attm:tm-column-count tm) (attm:tm-cells-per-column tm)))
-          tm)))))
+        (apply (pargs->new (append
+                            `([basal-input-size . ,(* (cdr (assq 'column-count kwargs))
+                                                      (cdr (assq 'cells-per-column kwargs)))])
+                             kwargs))
+          (key-word-args kwargs atsm-defaults))))))
                                                                                            ;
 (define atsm-defaults                    ;; (listof KWarg)
   `(

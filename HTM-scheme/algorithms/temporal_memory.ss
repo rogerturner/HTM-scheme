@@ -112,7 +112,8 @@
 
 ;; === Parameters and Data ===
                                                                                             ;
-(define %max-perm% 9999)                 ;; Fixnum
+(define x10k 1000)
+(define %max-perm% 999)                 ;; Fixnum
 (define %min-perm% 0)                    ;; Fixnum
                                                                                             ;
 (define (clip-max perm)                  ;; Permanence -> Permanence

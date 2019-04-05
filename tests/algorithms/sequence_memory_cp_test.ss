@@ -27,7 +27,7 @@
   (rnrs)
   (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept)
-  (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_sequence_memory) atsm:))
+  (prefix (HTM-scheme HTM-scheme algorithms column_pooler) atsm:))
 
 (define n            2048)
 (define w              40)
@@ -53,7 +53,27 @@
                 "assertion failed\n"
                 ,(list-summary x) #\newline
                 ,(list-summary y) #\newline))
-              (break)))))
+              #;(break)))))
+#|
+  Input Sequence: We train with M input sequences, each consisting of N random
+  patterns. Each pattern consists of a random number of bits on. The number of
+  1's in each pattern should be between 38 and 40 columns.
+
+  Each input pattern can optionally have an amount of spatial noise represented
+  by X, where X is the probability of switching an on bit with a random bit.
+
+  Training: The ETM is trained with P passes of the M sequences. There
+  should be a reset between sequences. The total number of iterations during
+  training is P*N*M.
+
+  Testing: Run inference through the same set of sequences, with a reset before
+  each sequence. For each sequence the system should accurately predict the
+  pattern at the next time step up to and including the N-1'st pattern. The
+  number of predicted inactive cells at each time step should be reasonably low.
+
+  We can also calculate the number of synapses that should be
+  learned. We raise an error if too many or too few were learned.
+|#
       (test-B 
         (lambda (title M N P cpc options)
           (show title)
@@ -75,10 +95,11 @@
             (for-each
               (lambda (sequence)
                 (let loop ((i 0) (pattern sequence))
-                  (atsm:compute tm (car pattern) #f)
-                  (when (positive? i)
-                    (assert-equal (set (atsm:get-predicted-cells tm))
-                                  (set (atsm:get-active-cells tm))))
+                  (let ((predicted-cells (set (atsm:get-active-cells tm))))
+                    (atsm:compute tm (car pattern) #f)
+                    (when (positive? i)
+                      (assert-equal predicted-cells ;(set (atsm:get-predicted-cells tm))
+                                    (set (atsm:get-active-cells tm)))))
                   (when (< i (- N 1))
                     (loop (add1 i) (cdr pattern))))
                 (atsm:reset tm)
@@ -90,10 +111,8 @@
         1 N 2 1 '())
 (test-B "B3: M=1, N=300, P=2. (See how high we can go with N)"
         1 (* 3 N) 2 1 '())
-#;(test-B "B4: M=3, N=300, P=2. (See how high we can go with N*M)"
+(test-B "B4: M=3, N=300, P=2. (See how high we can go with N*M)"
         3 (* 3 N) 2 1 '())
-(test-B "B4: M=50, N=50, P=2. (See how high we can go with N*M)"
-        50 50 2 1 '())
 (test-B "B5: like B1 but with 32 cellsPerColumn"
         1 N 2 32 '())
 (test-B "B6: like B4 but with 32 cellsPerColumn"
@@ -113,7 +132,7 @@
 ;; --- Helper functions ---
                                                                                             ;
 (define (init cpc options)
-  (atsm:make-tm
+  (atsm:make-cp
     (append 
       options `(
       [cell-count                  . ,n]

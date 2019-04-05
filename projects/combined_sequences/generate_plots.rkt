@@ -26,21 +26,21 @@
           #:label "Predicted active cells in temporal sequence layer")))
 
 (define (renderH3 rs ys xs)
-  (let* ((final   (for/list ([y ys] [x xs] #:when   (>= x 15)) y))
+  (let* ((final   (for/list ([y ys] [x xs] #:when   (>= x 9)) y))
          (correct (for/list ([f final]     #:when   (member f rs)) f))
          (missed  (append
                    (for/list ([f final]    #:unless (member f correct)) f)
                    (for/list ([r rs]       #:unless (member r correct)) r))))
     (list
-     (points (map vector (make-list (length correct) 15)
-                  (map (lambda (c) (+ c 4)) correct))) ;; centre circle on line
-     (points (map vector (make-list (length missed) 15) missed) #:sym 'times)
      (map (lambda (y x)
             (hrule y 0 x #:width 1 #:style 'solid))
           ys xs)
      (map (lambda (x)
             (vrule x 30 4090 #:width 1 #:color 'white))
-          (range 1 15)))))
+          (range 1 15))
+     (points (map vector (make-list (length correct) 15)
+                  (map (lambda (c) (+ c 4)) correct))) ;; centre circle on line
+     (points (map vector (make-list (length missed) 15) missed) #:sym 'times))))
          
 (define (with-x-coords vars)            ;; (listof (listof Number))
   ;; each element of vars is a list of y coordinates for a plot line
@@ -124,7 +124,7 @@
                      (range 0 80 10)
                      (let ((s "Sequence") (o "   Object"))
                        (list s o s o s s o s)))))))]
-         [("H3b" "H3c")
+         [("H3b" "H3c" "H4b")
           (parameterize
               ([plot-width  200]
                [plot-height 500]
@@ -133,14 +133,13 @@
                [plot-tick-size 0]
                [plot-x-far-axis? #f]
                [plot-y-far-axis? #f])
-            (let ((H3b (string=? figure "H3b"))
-                  (H3c (string=? figure "H3c")))
+            (let ((one-col (string=? figure "H3b")))
               (display (plot
                         #:title "   Column 1"
-                        #:x-min 0 #:x-max 15.3 #:x-label (if H3b "Number of sensations" "")
+                        #:x-min 0 #:x-max 15.3 #:x-label (if one-col "Number of sensations" "")
                         #:y-min -20 #:y-max 4116 #:y-label "Neuron #"
                         (renderH3 L2r L2a L2ac)))
-              (when H3c
+              (unless one-col
                 (parameterize ([plot-y-axis? #f] [plot-width 150])
                   (display (plot
                             #:title "   Column 2"
@@ -163,8 +162,8 @@
                       (filter (lambda (x) (> x n)) ac)))
                    (range 20)))
                  (newline))
-               (if H3b (list L2ac) (list L2ac L2a1c L2a2c))
-               (if H3b (list L2r) (list L2r L2r1 L2r2)))
+               (if one-col (list L2ac) (list L2ac L2a1c L2a2c))
+               (if one-col (list L2r) (list L2r L2r1 L2r2)))
               " "))]
          ))
       (display "\n(run-experiment-")
@@ -178,17 +177,32 @@
       )))
 
 (let ((f "combined_sequences.data"))
-  (let loop ()
-    (let ((fs (file-size f)))
-      (with-input-from-file f
-        (lambda ()
-          (let ((data (read)))
-            (unless (eof-object? data)
-              (plot-cs data)))))
-      (let wait ()
-        (sleep 0.1)
-        #;(sync (filesystem-change-evt "combined_sequences.data"))
-        (when (= fs (file-size f))
-          (wait))))
-    (loop)))
+  (with-input-from-file f
+    (lambda ()
+      (let loop ((data (read)))
+        (file-position (current-input-port) 0)
+        (if (eof-object? data) (exit)
+            (begin
+              (plot-cs data)
+              (let wait ()
+                (sleep 0.1)
+                (sync (filesystem-change-evt f))
+                (let ((newdata (read)))
+                  (file-position (current-input-port) 0)
+                  (if (equal? newdata data)
+                      (wait)
+                      (loop newdata)))))))))
+  #;(let loop ()
+      (let ((fs (file-size f)))
+        (with-input-from-file f
+          (lambda ()
+            (let ((data (read)))
+              (unless (eof-object? data)
+                (plot-cs data)))))
+        (let wait ()
+          (sleep 0.1)
+          (sync (filesystem-change-evt "combined_sequences.data"))
+          (when (= fs (file-size f))
+            (wait))))
+      (loop)))
 

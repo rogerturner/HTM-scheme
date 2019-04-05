@@ -75,7 +75,7 @@
       (trial-num                         (get 'trial-num           42))
       (input-size                        (get 'input-size        1024))
       (num-locations                     (get 'num-locations   100000))
-      (num-input-bits                    (get 'input-bits          20))
+      (num-input-bits                    (get 'num-input-bits      20))
       (settling-time                     (get 'settling-time        1))
       (num-repetitions                   (get 'num-repetitions      5))
       (figure                            (get 'figure              'z))
@@ -88,9 +88,16 @@
       (enable-feedback                   (get 'enable-feedback     #f))
       (online-learning                   (get 'online-learning     #f))
       (random-sequence-location          (get 'random-sequence-location  #t))
+      (display-timing                    (get 'display-timing      #t))
       (train-keys                        (get 'train-keys '()))
       (test-keys                         (get 'test-keys  '()))
-      #;(_                                 (random-seed! 42))
+      (train-keys (case figure
+                    [(H3b H3c H4b) (take num-cortical-columns train-keys)]
+                    [else train-keys]))
+      (test-keys  (case figure
+                    [(H3b H3c H4b) (take num-cortical-columns test-keys)]
+                    [else test-keys]))
+      #;(_          (random-seed! 42))
 ;; create the sequences and objects
 #;>   (generate-pattern (lambda _        ;; X -> SDR
                           (list-sort fx<? (vector->list 
@@ -123,7 +130,9 @@
                         [sample-size-proximal        . ,sample-size-proximal-L2]
                         [sample-size-distal          . ,sample-size-distal-L2]
                         [initial-proximal-permanence . ,(perm 0.45)]
-                        [syn-perm-proximal-dec       . ,(perm 0.002)])))
+                        [syn-perm-proximal-dec       . ,(perm 0.002)]
+                        [predicted-inhibition-threshold . ,(int<- (* 0.8 num-input-bits))]
+                        [online-learning             . ,online-learning])))
       (TM-overrides  (get 'TM-overrides
                       `([basal-predicted-segment-decrement . ,basal-predicted-segment-decrement])))
       (L4-overrides  (get 'L4-overrides
@@ -180,8 +189,8 @@
                           (list (get-stats-for test-keys)))))))
           '(seq obj seq obj seq seq obj seq) (build-list 8 id))))
                                                                                             ;
-#;> (define (have-sensations-of          ;; Experience Nat Bool [(Nat -> )] ->
-              experience settling-time learn . report)
+#;> (define (have-sensations-of          ;; Experience Bool [(Nat -> )] ->
+              experience learn . report)
       ;; feed each sensation of experience settling-time times, report after each sensation
       ;; (replaces both learnObjects and infer)
       (let* ( (object?    (sensation-location (vector-ref experience 0)))
@@ -204,16 +213,16 @@
             (l2l4tm:compute patch
               (vector-refs feature-pool  (build-input sensation-feature sx))
               (vector-refs location-pool (build-input sensation-location sx))
-              learn))
+              (or learn online-learning)))
           (unless (null? report)
             ((car report) sx)))))
                                                                                             ;
-#;> (define (train-all es n-reps stats)  ;; Experiences Nat Stats -> 
+#;> (define (train-all es stats)  ;; Experiences Nat Stats -> 
       ;; train the network on all the experiences (replaces trainSequences and trainObjects)
       (vector-for-each 
         (lambda (e ex)
-          (do ((_ 0 (add1 _))) ((= _ n-reps))
-            (have-sensations-of e num-learning-points #t)
+          (do ((_ 0 (add1 _))) ((= _ num-repetitions))
+            (have-sensations-of e #t)
             (unless (sensation-location (vector-ref e 0))
               ;; reset TM between presentations of sequence (num-learning-points = 1 for sequences)
               (vector-for-each atsm:reset (l2l4tm:patch-TMs patch))))
@@ -225,7 +234,7 @@
                                                                                             ;
 #;> (define (infer es ex report)         ;; Experiences Nat (Nat -> )
       ;; test experience, update stats after each sensation
-      (have-sensations-of (vector-ref es ex) settling-time #f report)
+      (have-sensations-of (vector-ref es ex) #f report)
       (l2l4tm:reset patch))              ;; reset defaults to true for infer
                                                                                             ;
 #;> (define (get-stats-for keys)         ;; {Symbol} -> {Nat}
@@ -260,16 +269,16 @@
       (case figure
         [(A6)
           (train-superimposed)]
-        [(H3b H3c)
-          (train-all objects 1 stats)]
+        [(H3b H3c H4b)
+          (train-all objects stats)]
         [else
-          (train-all objects   num-repetitions stats)
-          (train-all sequences num-repetitions stats)])
+          (train-all objects   stats)
+          (train-all sequences stats)])
 ;; run inference
       (case figure
         [(A6)
           (infer-switching stats) ]
-        [(H3b H3c)
+        [(H3b H3c H4b)
           (infer objects 0 (lambda (sx)  ;; just first object
               (vector-set! stats 0 
                 (append (vector-ref stats 0)
@@ -278,20 +287,21 @@
           (infer-all objects   stats)
           (infer-all sequences stats) ] )
 ;; display timing
-      (let ((tenths (fxdiv (+ (- (cpu-time) start-time) 50) 100)))
-        (for-each display `(
-            ,(symbol->string figure) " " ,@run-args #\newline
-            ,(fxdiv tenths 10) "." ,(fxmod tenths 10) "s cpu time\n"
-            ,(atpm:get-n-segments-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 segments\n"
-            ,(atpm:get-n-synapses-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 synapses\n"
-            ,(atsm:get-n-segments-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM segments\n"
-            ,(atsm:get-n-synapses-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM synapses\n"
-            )))
+      (when display-timing
+        (let ((tenths (fxdiv (+ (- (cpu-time) start-time) 50) 100)))
+          (for-each display `(
+              ,(symbol->string figure) " " ,@run-args #\newline
+              ,(fxdiv tenths 10) "." ,(fxmod tenths 10) "s cpu time\n"
+              ,(atpm:get-n-segments-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 segments\n"
+              ,(atpm:get-n-synapses-created (vector-ref (l2l4tm:patch-L4s patch) 0)) " L4 synapses\n"
+              ,(atsm:get-n-segments-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM segments\n"
+              ,(atsm:get-n-synapses-created (vector-ref (l2l4tm:patch-TMs patch) 0)) " TM synapses\n"
+              ))))
 ;; compute statistics needed for plots
     (let ((mean (lambda (x) (if (eq? figure 'A6)  x
                    (int<- (/ x (+ num-objects num-sequences)))))))
     (case figure
-      [(H3b H3c) #f]
+      [(H3b H3c H4b) #f]
       [else
         ;; stats :: (ExpVectorOf (SensListOf (KeyListOf (CCVectorOf Number))))
         #f #;(vector-for-each-x               ;; for each experience (diagnostic output)
@@ -311,7 +321,7 @@
           [list "figure" (symbol->string figure)]
           [list "using"  run-args]
           (case figure
-            [(H3b H3c)
+            [(H3b H3c H4b)
               (let ((first-object (vector-ref stats 0)))  ;; (SensListOf (KeyListOf (CCVectorOf Number)))
                 (append
                   (map                   ;; cell indexes for each stat
@@ -408,16 +418,13 @@
     [num-learning-points  .  4]          ;; ?
     [num-cortical-columns .  1]
     [num-features         .  3]
-    [num-points           . 15]
+    [num-points           . 10]
     [num-objects          . 10]
     [num-locations        . 10]
-    [L2-overrides         . 
-      ([initial-proximal-permanence . ,(perm 0.45)]
-       [syn-perm-proximal-dec       . ,(perm 0.002)])]
     [L4-overrides         . ()]
     [enable-feedback      . #t]
     [num-sequences        .  0]
-    [settling-time        .  2]
+    [settling-time        .  1]
     [train-keys           . (L2r)]
     [test-keys            . (L2a)])
     args))
@@ -434,12 +441,9 @@
     [num-learning-points  .  4]          ;; ?
     [num-cortical-columns .  3]
     [num-features         .  3]
-    [num-points           . 15]
+    [num-points           . 10]
     [num-objects          . 10]
     [num-locations        . 10]
-    [L2-overrides         . 
-      ([initial-proximal-permanence . ,(perm 0.45)]
-       [syn-perm-proximal-dec       . ,(perm 0.002)])]
     [L4-overrides         . ()]
     [enable-feedback      . #t]
     [num-sequences        .  0]
@@ -450,22 +454,37 @@
   ;; Other settings (cf Hawkins Ahmed Cui 2017):
   ;;   (run-experiment-H3c '[input-size . 150] '[num-input-bits . 10])
 
-#;(run-experiment-A4a '[num-sequences . 10] '[enable-feedback . #t])
+(define (run-experiment-H4b . args)
+  (run-experiment `(
+    [figure              . H4b]
+    [input-size          . 150]
+    [num-input-bits       . 10]
+    [num-learning-points  .  4]
+    [num-cortical-columns .  1]
+    [num-features         .  5]
+    [num-points           . 10]
+    [num-objects          . 100]
+    [num-locations        . 100]
+    [L4-overrides         . ()]
+    [enable-feedback      . #t]
+    [num-sequences        .  0]
+    [settling-time        .  2]
+    [train-keys           . (L2r L2r1 L2r2)]
+    [test-keys            . (L2a L2a1 L2a2)])
+    args))
 
-#;(run-experiment-A4a '[num-sequences . 10] '[input-size . 150] '[num-input-bits . 10]
-  `[basal-predicted-segment-decrement . ,(perm 0.01)] '[random-sequence-location . #f])
-  
-#;(run-experiment-A4a '[input-size . 150] '[num-input-bits . 10])
-  
-#;(run-experiment-A5a '[input-size . 150] '[num-input-bits . 10])
+(for-each
+  (lambda (expt)
+    (display expt) (newline)
+    (case expt
+      [("A4a")   (run-experiment-A4a) ]
+      [("A4a10") (run-experiment-A4a '[num-sequences . 10]) ]
+      [("A5a")   (run-experiment-A5a) ]
+      [("A6")    (run-experiment-A6)  ]
+      [("A610")  (run-experiment-A6  '[num-objects . 10] '[num-sequences . 10]) ]
+      [("H3b")   (run-experiment-H3b '[input-size . 150] '[num-input-bits . 10]) ]
+      [("H3c")   (run-experiment-H3c '[input-size . 150] '[num-input-bits . 10]) ]
+      [("H4b")   (run-experiment-H4b) ]
+      ))
+  (command-line))
 
-#;(run-experiment-A6  '[num-objects . 10] '[num-sequences . 10])
-
-#;(run-experiment-H3b '[input-size . 150] '[num-input-bits . 10])
-
-#;(run-experiment-H3c '[input-size . 150] '[num-input-bits . 10]
-  '[num-learning-points  .  6])
-
-
-(run-experiment-H3b '[num-features . 30] '[num-locations . 30] '[num-objects . 30]
-   '[input-size . 150] '[num-input-bits . 10])

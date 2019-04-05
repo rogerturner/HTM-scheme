@@ -1,4 +1,4 @@
-#!r6rs
+#!chezscheme
 
 ;; === HTM-scheme Apical Tiebreak Pair Memory Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -41,7 +41,7 @@
     (attm:tm-n-synapses-created      get-n-synapses-created)))
                                                                                             ;
 (import 
-  (rnrs)
+  (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))

@@ -22,6 +22,20 @@
   ;; htmresearch/.../numpy_helpers.py, nupic-core/.../SparseMatrixConnections.cpp --
   ;; see comments there for descriptions of functions and parameters.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  #|
+
+A generalized Temporal Memory with apical dendrites that add a "tiebreak".
+
+Basal connections are used to implement traditional Temporal Memory.
+
+The apical connections are used for further disambiguation. If multiple cells
+in a minicolumn have active basal segments, each of those cells is predicted,
+unless one of them also has an active apical segment, in which case only the
+cells with active basal and apical segments are predicted.
+
+In other words, the apical connections have no effect unless the basal input
+is a union of SDRs (e.g. from bursting minicolumns).
+  |#
 
 (library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
                                                                                             ;
@@ -39,11 +53,8 @@
 
   tm                                     ;; for pair/sequence memory
   make-tm
-  tm-column-count
-  tm-cells-per-column
   number-of-cells
   map-segments-to-cells
-  tm-basal-input-size-set!
   (rename                                ;; for temporal_memory_test
     (create-segment       test:create-segment)
     (tm-basal-connections test:tm-basal-connections)
@@ -70,10 +81,10 @@
                                                                                             ;
 (define-record-type tm                   ;; TM
   (fields
-    column-count                         ;; Nat  The number of minicolumns
-    (mutable basal-input-size)           ;; Nat  The number of bits in the basal input
-    apical-input-size                    ;; Nat  The number of bits in the apical input
-    cells-per-column                     ;; Nat 
+    column-count                         ;; Nat
+    basal-input-size                     ;; Nat
+    apical-input-size                    ;; Nat
+    cells-per-column                     ;; Nat
     activation-threshold                 ;; Nat
     reduced-basal-threshold              ;; Nat
     initial-permanence                   ;; Perm
@@ -93,7 +104,7 @@
     (mutable active-cells)               ;; (listof CellX)
     (mutable winner-cells)               ;; (listof CellX)
     (mutable predicted-cells)            ;; (listof CellX)
-    (mutable predicted-active-cells)     ;; (listof CellX) 
+    (mutable predicted-active-cells)     ;; (listof CellX)
     (mutable active-basal-segments)      ;; (listof Segment)
     (mutable active-apical-segments)     ;; (listof Segment)
     (mutable matching-basal-segments)    ;; (listof Segment)
@@ -203,8 +214,9 @@
     ;; Calculate active cells
     [ ( correct-predicted-cells bursting-columns)
           (set-compare tm (tm-predicted-cells tm) active-columns)]
+    [ ( cells-in-bursting-cols)  (get-all-cells-in-columns tm bursting-columns)]
     [ ( new-active-cells) 
-          (append correct-predicted-cells (get-all-cells-in-columns tm bursting-columns)) ]
+          (append correct-predicted-cells cells-in-bursting-cols) ]
     ;; Calculate learning
     [ ( learning-active-basal-segments
         learning-matching-basal-segments
@@ -460,7 +472,7 @@
           (list-ref candidate-cells (random (length candidate-cells))))))
     columnxs))
                                                                                             ;
-(define (number-of-cells tm)
+(define (number-of-cells tm)             ;; TM -> Nat
   (fx* (tm-column-count tm) (tm-cells-per-column tm)))
 
 ;; === Supporting Functions ===
