@@ -10,9 +10,11 @@ Directory structure, file names, and source organization echo the htmresearch re
 
 
 The HTM-scheme combined_sequences project can also reproduce some of the experiments from the Numenta ["Columns" paper](http://dx.doi.org/10.3389/fncir.2017.00081):
+
 ####Fig3(B) One cortical column &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \(C) Three cortical columns
 
-![Figure 3B/C](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/combined_sequences/Figure H3b+c.png)
+
+![Figure 3B/C](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/combined_sequences/Figure%20H3b+c.png)
 
 
 The algorithms under ongoing development are R6RS libraries in HTM-scheme/HTM-scheme/algorithms, and are named with the path from HTM-scheme root, so can be imported to a top level program in the directory enclosing HTM-scheme.
