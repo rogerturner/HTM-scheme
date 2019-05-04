@@ -297,7 +297,8 @@ is a union of SDRs (e.g. from bursting minicolumns).
                 (unique fx=? (sort! fx<?
                   (append correct-predicted-cells
                           (map-segments-to-cells learning-matching-basal-segments)
-                          new-basal-segment-cells))))
+                          new-basal-segment-cells 
+                          '()))))        ;; *copy new-basal-segment-cells*
               ;; Incorrectly predicted columns
               (correct-matching-basal-mask
                 (in1d (map (/cpc tm) cells-for-matching-basal) active-columns))
@@ -482,7 +483,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
 (define (calculate-segment-activity      ;; TM {CellX} (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (Vectorof Nat)
           tm active-input pre-index reduced-threshold reduced-threshold-cells)
   ;; for active-input cells, produce lists of segments with connected/potential synapses,
-  ;; and potential snapse counts (combines connections.computeActivity and _calculateApical/BasalSegmentActivity)
+  ;; and potential synapse counts (combines connections.computeActivity and _calculateApical/BasalSegmentActivity)
   (let (
     (napsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-potential-synapses-for-segment"
     (nacsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-connected-synapses-for-segment"
