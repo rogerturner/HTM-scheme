@@ -26,7 +26,8 @@
   build-list
   take
   list-average
-  unique
+  unique!
+  condense!
   int<-
   id
   build-vector
@@ -96,8 +97,8 @@
   ;; produce mean of non-empty list
   (/ (apply + l) (length l)))
                                                                                             ;
-(define (unique eql? xs)                 ;; (X X -> Boolean) (listof X) -> (listof X)
-  ;; produce list with adjacent duplicates by eql? removed
+(define (unique! eql? xs)                ;; (X X -> Boolean) (listof X) -> (listof X)
+  ;; mutate xs removing adjacent duplicates by eql?
   ;;  (cond [(null? xs) '()]
   ;;        [(null? (cdr xs)) xs]
   ;;        [(eql? (car xs) (cadr xs)) (unique eql? (cdr xs))]
@@ -110,7 +111,7 @@
           (let skip ((next (cdr next)))
             (cond
               [(null? next)
-                (set-cdr! first next)
+                (set-cdr! first '())
                 xs]
               [(eql? (car first) (car next))
                 (skip (cdr next))]
@@ -119,6 +120,24 @@
                 (loop next (cdr next))]))]
         [else
           (loop next (cdr next))]))))
+                                                                                      ;
+(define (condense! l)                      ;; (listof X) -> (listof X)
+  ;; mutate l by removing eq? duplicates
+  (let condense ((len (length l)) (l l))
+    (if (fx<? len 2)  l
+      (let* (
+        (half-len (fxdiv len 2))
+        (last (list-tail l (fx- half-len 1)))
+        (rest (cdr last)))
+        (set-cdr! last '())
+        (let* (
+          (filtered-begin (condense half-len l))
+          (filtered-end
+            (let ((l (filter (lambda (x)
+                       (not (memq x filtered-begin)))
+                       rest)))
+              (condense (length l) l))))
+          (append! filtered-begin filtered-end))))))
                                                                                       ;
 (define (int<- x)                        ;; Number -> Integer
   (exact (round x)))
@@ -294,8 +313,8 @@
   ;; produce intersection of sorted lists of fixnums
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
-  (let loop ((l1 (unique fx=? l1)) (l2 (unique fx=? l2)) (result (list)))
-    (cond [(or (null? l1) (null? l2)) (reverse! result)]
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(or (null? l1) (null? l2)) (reverse! (unique! fx=? result))]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 result)]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) result)]
           [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
@@ -305,9 +324,11 @@
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(and (null? l1) (null? l2)) (unique fx=? (reverse! result))]
-          [(null? l1) (append (reverse! result) l2)]
-          [(null? l2) (append (reverse! result) l1)]
+    (cond [(and (null? l1) (null? l2)) (reverse! (unique! fx=? result))]
+          [(null? l1) (append! (reverse! (unique! fx=? result))
+                               (unique! fx=? (append l2 (list))))]
+          [(null? l2) (append! (reverse! (unique! fx=? result))
+                               (unique! fx=? (append l1 (list))))]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l2) result))]
           [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
@@ -316,9 +337,10 @@
   ;; produce difference of sorted lists of fixnums
   ;; (assert (equal? l1 (list-sort fx<? l1)))
   ;; (assert (equal? l2 (list-sort fx<? l2)))
-  (let loop ((l1 (unique fx=? l1)) (l2 (unique fx=? l2)) (result (list)))
-    (cond [(null? l1) (reverse! result)]
-          [(null? l2) (append (reverse! result) l1)]
+  (let loop ((l1 l1) (l2 l2) (result (list)))
+    (cond [(null? l1) (reverse! (unique! fx=? result))]
+          [(null? l2) (append! (reverse! (unique! fx=? result))
+                               (unique! fx=? (append l1 (list))))]
           [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
           [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l1) result))]
           [else (loop (cdr l1) (cdr l2) result)])))
@@ -413,7 +435,8 @@
                 (exit))) ...)])))
                                                                                             ;
   [expect ( [list-average (list 1 2 27)]  10 )]
-  ;[expect ( [unique fx=? '(1 2 2 3 4 4)] '(1 2 3 4) )]
+  [expect ( [unique! fx=? '(1 2 2 3 4 4)] '(1 2 3 4) )]
+  [expect ( [condense! '(1 2 1 1 3 2 3 1)] '(1 2 3) )]
   [expect ( [build-list 3 -] '(0 -1 -2) )]
   [expect ( [take 2 '(a 2 c)] '(a 2) )]
   [expect ( [make-list 0 9] '()      )

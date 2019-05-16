@@ -285,7 +285,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
             (filter-segments-by-cell active-basal-segments correct-predicted-cells))
           (cells-for-matching-basal
             (map-segments-to-cells matching-basal-segments))
-          (matching-cells (unique fx=? cells-for-matching-basal)))
+          (matching-cells (unique! fx=? cells-for-matching-basal)))
     (let-values ([(matching-cells-in-bursting-columns bursting-columns-with-no-match)
                   (set-compare tm matching-cells bursting-columns)])
       (let* ( (learning-matching-basal-segments
@@ -294,7 +294,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
               (new-basal-segment-cells
                 (get-cells-with-fewest-segments tm bursting-columns-with-no-match))
               (learning-cells 
-                (unique fx=? (sort! fx<?
+                (unique! fx=? (sort! fx<?
                   (append correct-predicted-cells
                           (map-segments-to-cells learning-matching-basal-segments)
                           new-basal-segment-cells 
@@ -525,7 +525,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
             (vector-ref pre-index cellx))))
       active-input)
     (values actsegs
-      (unique eq? (sort!
+      (unique! eq? (sort!
         (lambda (sega segb)
           (cond [(fx<? (seg-cellx sega) (seg-cellx segb))]
                 [(fx=? (seg-cellx sega) (seg-cellx segb))

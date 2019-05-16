@@ -101,10 +101,10 @@
                                                                                             ;
 (define (get-next-basal-predicted-cells tm)  ;; TM -> {CellX}
   ;; Cells with active basal segments
-  (unique fx=? (attm:map-segments-to-cells (attm:get-active-basal-segments tm))))
+  (unique! fx=? (attm:map-segments-to-cells (attm:get-active-basal-segments tm))))
                                                                                             ;
 (define (get-next-apical-predicted-cells tm) ;; TM -> {CellX}
   ;; Cells with active apical segments
-  (unique fx=? (attm:map-segments-to-cells (attm:get-active-apical-segments tm))))
+  (unique! fx=? (attm:map-segments-to-cells (attm:get-active-apical-segments tm))))
 
 )

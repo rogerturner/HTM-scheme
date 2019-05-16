@@ -335,8 +335,8 @@
   (bitwise->list (bitwise-and (list->bitwise l1) (bitwise-not (list->bitwise l2)))))
                                                                                             ;
 (define (get-bursting-columns tm)        ;; TM -> (listof ColX)
-  (let ((predicted (unique = (map cellx->colx (atsm:get-predicted-cells tm))))
-        (active    (unique = (map cellx->colx (atsm:get-active-cells tm)))))
+  (let ((predicted (unique! = (map cellx->colx (atsm:get-predicted-cells tm))))
+        (active    (unique! = (map cellx->colx (atsm:get-active-cells tm)))))
     (list-difference active predicted)))
                                                                                             ;
 (define (random-pattern size)            ;; Nat -> {Nat}
@@ -356,7 +356,7 @@
     cells))
                                                                                             ;
 (define (set l)   ;; {X} -> {X}
-  (unique = l))
+  (unique! = l))
   
 ;(time-apply run '())
 ;(time (run))

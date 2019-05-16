@@ -68,7 +68,7 @@
                     (lambda (pattern)
                       (atsm:compute tm pattern #t))
                     sequence)
-                  (atsm:reset tm)
+                  ;(atsm:reset tm)
                   (show " ."))
                 sequences))
             ;; Predict
@@ -81,18 +81,19 @@
                                   (set (atsm:get-active-cells tm))))
                   (when (< i (- N 1))
                     (loop (add1 i) (cdr pattern))))
-                (atsm:reset tm)
+                ;(atsm:reset tm)
                 (show " ."))
               sequences)
             (show " ok\n")))))
-          
+
+(show "(see numenta/htmresearch/.../sequence_memory_test_base.py)\n")          
 (test-B "B1: Basic sequence learner.  M=1, N=100, P=2"
-        1 N 2 1 '())
+        1 N 10 1 '())
 (test-B "B3: M=1, N=300, P=2. (See how high we can go with N)"
         1 (* 3 N) 2 1 '())
-#;(test-B "B4: M=3, N=300, P=2. (See how high we can go with N*M)"
+(test-B "B4: M=3, N=300, P=2. (See how high we can go with N*M)"
         3 (* 3 N) 2 1 '())
-(test-B "B4: M=50, N=50, P=2. (See how high we can go with N*M)"
+#;(test-B "B4: M=50, N=50, P=2. (See how high we can go with N*M)"
         50 50 2 1 '())
 (test-B "B5: like B1 but with 32 cellsPerColumn"
         1 N 2 32 '())
@@ -116,7 +117,7 @@
   (atsm:make-tm
     (append 
       options `(
-      [cell-count                  . ,n]
+      [column-count                . ,n]
       [cells-per-column            . ,cpc]
       [initial-permanence          . ,(perm 0.5)]
       [connected-permanence        . ,(perm 0.6)]
@@ -134,7 +135,7 @@
   (list-sort < (vector->list (vector-sample (build-vector n id) w))))
                                                                                             ;
 (define (set l)
-  (unique = l))
+  (unique! = l))
   
 (run)
   

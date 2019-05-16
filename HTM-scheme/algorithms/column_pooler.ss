@@ -500,7 +500,7 @@
               (let ((selected (vector->list (vector-sample (list->vector rem-ff-cells) n))))
                 (set! chosen-cells (append selected chosen-cells)))
               (set! chosen-cells (append rem-ff-cells chosen-cells))))))
-      (cp-active-cells-set! cp (unique eqv? (list-sort fx<? chosen-cells))))))
+      (cp-active-cells-set! cp (unique! fx=? (sort! fx<? chosen-cells))))))
                                                                                             ;
 (define (num-connected-proximal-synapses ;; CP {CellX} -> Nat
           cp cells)
