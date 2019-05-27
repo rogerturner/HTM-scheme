@@ -285,6 +285,8 @@ is a union of SDRs (e.g. from bursting minicolumns).
             (filter-segments-by-cell active-basal-segments correct-predicted-cells))
           (cells-for-matching-basal
             (map-segments-to-cells matching-basal-segments))
+          (basal-segments-to-punish      ;; here because unique! will mutate cells-for-matching-basal
+            (exclude-segments tm matching-basal-segments cells-for-matching-basal active-columns))
           (matching-cells (unique! fx=? cells-for-matching-basal)))
     (let-values ([(matching-cells-in-bursting-columns bursting-columns-with-no-match)
                   (set-compare tm matching-cells bursting-columns)])
@@ -298,12 +300,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
                   (append correct-predicted-cells
                           (map-segments-to-cells learning-matching-basal-segments)
                           new-basal-segment-cells 
-                          '()))))        ;; *copy new-basal-segment-cells*
-              ;; Incorrectly predicted columns
-              (correct-matching-basal-mask
-                (in1d (map (/cpc tm) cells-for-matching-basal) active-columns))
-              (basal-segments-to-punish
-                (exclude-by-mask matching-basal-segments correct-matching-basal-mask)))
+                          '())))))       ;; *copy new-basal-segment-cells*
         (values
           learning-active-basal-segments
           learning-matching-basal-segments
@@ -333,10 +330,8 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                           matching-apical-segments apical-potential-overlaps))
           (new-apical-segment-cells
             (setdiff1d learning-cells-without-active-apical learning-cells-with-matching-apical))
-          (correct-matching-apical-mask
-            (in1d (map (/cpc tm) cells-for-matching-apical) active-columns))
           (apical-segments-to-punish
-            (exclude-by-mask matching-apical-segments correct-matching-apical-mask)))
+            (exclude-segments tm matching-apical-segments cells-for-matching-apical active-columns)))
         (values
           learning-active-apical-segments
           learning-matching-apical-segments
@@ -562,6 +557,16 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (memv (seg-cellx segment) cellxs))
     segments))
                                                                                             ;
+(define (exclude-segments tm             ;; TM {Seg} {CellX} {ColX} -> {Seg}
+          segs cellxs colxs)
+  ;; produce segs for which cellx is not in colxs; segs and cellxs are parallel
+  (fold-left (lambda (acc seg cellx)
+      (if (memv (cellx->colx tm cellx) colxs)
+        acc
+        (cons seg acc)))
+    (list)
+    segs cellxs))
+                                                                                          ;
 (define (map-segments-to-synapse-counts  ;; {Seg} -> {Nat}
           segments)
   (map (lambda (segment)
