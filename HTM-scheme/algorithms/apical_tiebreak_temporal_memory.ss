@@ -352,23 +352,39 @@ is a union of SDRs (e.g. from bursting minicolumns).
 (define (calculate-predicted-cells tm    ;; TM {Seg} {Seg} -> {CellX}
           active-basal-segments active-apical-segments)
   ;; Calculate the predicted cells, given the set of active segments.
-  (let* ( (cells-for-basal-segments  (map-segments-to-cells active-basal-segments))
-          (cells-for-apical-segments (map-segments-to-cells active-apical-segments))
-          (fully-depolarized-cells       ;; cells with both types of segments active
-            (intersect1d cells-for-basal-segments cells-for-apical-segments))
-          (partly-depolarized-cells      ;; cells with basal only
-            (setdiff1d cells-for-basal-segments fully-depolarized-cells))
-          (inhibited-mask
-            (in1d 
-              (map (/cpc tm) partly-depolarized-cells)
-              (map (/cpc tm) fully-depolarized-cells)))
-          (predicted-cells
-            (if (tm-use-apical-tiebreak tm)
-              (sort! fx<?
-                (append! fully-depolarized-cells
-                        (exclude-by-mask partly-depolarized-cells inhibited-mask)))
-              cells-for-basal-segments)))
-    predicted-cells))
+  (let ((cells-for-basal-segments (unique! fx=? (map-segments-to-cells active-basal-segments))))
+    (if (tm-use-apical-tiebreak tm)
+      (let ((cells-for-apical-segments (unique! fx=? (map-segments-to-cells active-apical-segments))))
+        (let loop ( (cfbs  cells-for-basal-segments )
+                    (cfas  cells-for-apical-segments)
+                    (fully-depolarized-cells  (list))
+                    (partly-depolarized-cells (list))
+                    (inhibited-cols           (list)))
+          (if (null? cfbs)
+            (sort! fx<?
+              (append!
+                (filter (lambda (cellx)
+                    (not (memv (cellx->colx tm cellx) inhibited-cols)))
+                  partly-depolarized-cells)
+                fully-depolarized-cells))
+            (let ((cell-with-basal-seg (car cfbs))
+                  (cell-with-apical-seg 
+                    (if (null? cfas)  (greatest-fixnum)
+                      (car cfas))))
+              (cond
+                [(fx=? cell-with-basal-seg cell-with-apical-seg)   ;; fully depolarized cell
+                  (loop (cdr cfbs) (cdr cfas)
+                    (cons cell-with-basal-seg fully-depolarized-cells)
+                    partly-depolarized-cells
+                    (cons (cellx->colx tm cell-with-basal-seg) inhibited-cols)) ]
+                [(fx<? cell-with-basal-seg cell-with-apical-seg)   ;; partly depolarized cell
+                  (loop (cdr cfbs) cfas
+                    fully-depolarized-cells
+                    (cons cell-with-basal-seg partly-depolarized-cells)
+                    inhibited-cols) ]
+                [ else                                             ;; apical only
+                  (loop cfbs (cdr cfas) fully-depolarized-cells partly-depolarized-cells inhibited-cols)])))))
+      cells-for-basal-segments)))
                                                                                             ;
 (define (learn tm connections            ;; TM Connections {Seg} {CellX} {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
           learning-segments active-input growth-candidates potential-overlaps pre-index)
@@ -557,16 +573,6 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (memv (seg-cellx segment) cellxs))
     segments))
                                                                                             ;
-(define (exclude-segments tm             ;; TM {Seg} {CellX} {ColX} -> {Seg}
-          segs cellxs colxs)
-  ;; produce segs for which cellx is not in colxs; segs and cellxs are parallel
-  (fold-left (lambda (acc seg cellx)
-      (if (memv (cellx->colx tm cellx) colxs)
-        acc
-        (cons seg acc)))
-    (list)
-    segs cellxs))
-                                                                                          ;
 (define (map-segments-to-synapse-counts  ;; {Seg} -> {Nat}
           segments)
   (map (lambda (segment)
@@ -576,12 +582,40 @@ is a union of SDRs (e.g. from bursting minicolumns).
 (define (/cpc tm)                        ;; TM -> (CellX -> ColX)
   (lambda (cellx) (cellx->colx tm cellx)))
                                                                                             ;
+(define (exclude-segments tm             ;; TM {Seg} {CellX} {ColX} -> {Seg}
+          segs cellxs colxs)
+  ;; produce segments for which cellx is not in colxs; segs and cellxs are parallel
+  (fold-left (lambda (acc seg cellx)
+      (if (memv (cellx->colx tm cellx) colxs)
+        acc
+        (cons seg acc)))
+    (list)
+    segs cellxs))
+                                                                                            ;
+(define (col-intersect tm cellxs colxs)  ;; TM {CellX} {ColX} -> {CellX}
+  ;; produce cells for which (col of) cellx is in colxs
+  (unique! fx=?
+    (fold-left (lambda (acc cellx)
+        (if (memv (cellx->colx tm cellx) colxs)
+          (cons cellx acc)
+          acc))
+      (list)
+      cellxs)))
+                                                                                            ;
+(define (col-difference tm colxs cellxs) ;; TM {ColX} {CellX} -> {ColX}
+  ;; produce cols for which colx is not in (col of) cellxs
+  (let ((cols-for-cells (map (/cpc tm) cellxs)))
+    (fold-left (lambda (acc colx)
+        (if (memv colx cols-for-cells)
+          acc
+          (cons colx acc)))
+      (list)
+      colxs)))
+                                                                                            ;
 (define (set-compare tm a b)             ;; TM {CellX} {ColX} -> {CellX} {ColX}
   ;; produce intersection (a&b), difference (b-a), using (a/cpc) for compare
-  (let ((a-within-b-mask (in1d (map (/cpc tm) a) b))
-        (b-within-a-mask (in1d b (map (/cpc tm) a))))
-    (values (include-by-mask a a-within-b-mask) (exclude-by-mask b b-within-a-mask))))
-                                                                                           ;
+  (values (col-intersect tm a b) (col-difference tm b a)))
+                                                                                            ;
 (define (argmax-multi a group-keys)      ;; {Number} {Number} -> {Nat}
   ;; gets the indices of the max values of each group in 'a', grouping the
   ;; elements by their corresponding value in 'groupKeys'.
