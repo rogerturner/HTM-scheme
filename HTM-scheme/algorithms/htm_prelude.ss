@@ -61,6 +61,7 @@
   in1d
   include-by-mask
   exclude-by-mask
+  threaded-vector-for-each
   define-memoized)
                                                                                             ;
 (import
@@ -368,6 +369,23 @@
       (list->vector 
         (bitwise->list
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
+                                                                                            ;
+(define (threaded-vector-for-each f . vs) ;; (X ... -> ) (vectorof X) ... ->
+  ;; in a new thread for each, apply f to elements of vs, return when all finished
+  (let ((todo     (vector-length (car vs)))
+        (mutex    (make-mutex))
+        (finished (make-condition)))
+    (apply vector-for-each (lambda xs
+        (fork-thread (lambda () 
+            (apply f xs)
+            (with-mutex mutex
+              (set! todo (- todo 1))
+              (when (zero? todo)
+                (condition-signal finished))))))
+      vs)
+    (with-mutex mutex
+      (unless (zero? todo)
+        (condition-wait finished mutex)))))
                                                                                             ;
   ;; List comprehensions from the Programming Praxis standard prelude
   ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)

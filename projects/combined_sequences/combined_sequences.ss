@@ -85,6 +85,7 @@
       (sample-size-distal-L2             (get 'sample-size-distal-L2     20))
       (basal-predicted-segment-decrement (get 'basal-predicted-segment-decrement (perm 0.001)))
       (num-learning-points               (get 'num-learning-points  1))
+      (num-cells-per-column              (get 'num-cells-per-column 16))
       (enable-feedback                   (get 'enable-feedback     #f))
       (online-learning                   (get 'online-learning     #f))
       (random-sequence-location          (get 'random-sequence-location  #t))
@@ -99,13 +100,15 @@
                     [else test-keys]))
       #;(_          (random-seed! 42))
 ;; create the sequences and objects
-#;>   (generate-pattern (lambda _        ;; X -> SDR
-                          (list-sort fx<? (vector->list 
-                            (vector-sample (build-vector input-size id) num-input-bits)))))
-#;>   (generate-pool    (lambda (n)      ;; Nat -> (vectorof SDR)
-                          (build-vector (* n num-cortical-columns) generate-pattern)))
-      (feature-pool     (generate-pool num-features))
-      (location-pool    (generate-pool num-locations))
+#;>   (random-sdr   (lambda (size)       ;; Nat -> (X -> SDR)
+                    ;; produce function to generate SDR of size
+                      (lambda _
+                        (list-sort fx<? (vector->list 
+                          (vector-sample (build-vector size id) num-input-bits))))))
+      (feature-pool
+        (build-vector (* num-features  num-cortical-columns) (random-sdr input-size)))
+      (location-pool
+        (build-vector (* num-locations num-cortical-columns) (random-sdr (* input-size num-cells-per-column))))
 #;>   (create-random-experiences         ;; Nat Nat Nat -> Experiences
         (lambda (num-exps num-sensations num-locations)
         ;; produce Object experiences, or Sequence experiences when num-locations is zero
@@ -475,7 +478,6 @@
 
 (for-each
   (lambda (expt)
-    (display expt) (newline)
     (case expt
       [("A4a")   (run-experiment-A4a) ]
       [("A4a10") (run-experiment-A4a '[num-sequences . 10]) ]
@@ -485,6 +487,7 @@
       [("H3b")   (run-experiment-H3b '[input-size . 150] '[num-input-bits . 10]) ]
       [("H3c")   (run-experiment-H3c '[input-size . 150] '[num-input-bits . 10]) ]
       [("H4b")   (run-experiment-H4b) ]
-      ))
-  (command-line))
+      )
+    (display-statistics))
+  (command-line-arguments))
 

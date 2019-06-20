@@ -11,7 +11,7 @@
     (cp0-effort-limit 10000)
     (cp0-score-limit 1000)
     (generate-wpo-files #t))
-  (compile-program "HTM-scheme/projects/combined_sequences/combined_sequences.ss")
-  (compile-whole-program "HTM-scheme/projects/combined_sequences/combined_sequences.wpo" "combined_sequences.wp"))
+  (compile-program "HTM-scheme/projects/combined_sequences/combined_sequences.ss" "object-files/combined_sequences.so")
+  (compile-whole-program "object-files/combined_sequences.wpo" "combined_sequences.wp"))
   
 (exit)
