@@ -1,6 +1,6 @@
 #!chezscheme
 
-;; === HTM-scheme Column Pooler Copyright 2019 Roger Turner. ===
+;; === HTM-scheme Column Pooler algorithm Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2016, Numenta, Inc.                            ;;
@@ -20,12 +20,14 @@
 
   ;; Translated from numenta htmresearch/.../column_pooler.py --
   ;; see comments there for descriptions of functions and parameters.
-  ;; "This class constitutes a temporary implementation for a cross-column pooler.
-  ;;  The implementation goal of this class is to prove basic properties before
-  ;;  creating a cleaner implementation." [Numenta description]
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  #|
+  
+"This class constitutes a temporary implementation for a cross-column pooler.
+The implementation goal of this class is to prove basic properties before
+creating a cleaner implementation." [Numenta description]
 
-#| Selected comments from htmresearch/.../column_pooler.py:                                                                                       ;
+  Selected comments from htmresearch/.../column_pooler.py:                                                                                       ;
 
   maxSdrSize
     The maximum SDR size for learning.  If the column pooler has more
@@ -189,17 +191,17 @@
     [min-sdr-size                   . 0]
     [syn-perm-proximal-inc          . ,(perm 0.1)]
     [syn-perm-proximal-dec          . ,(perm 0.001)]
-    [initial-proximal-permanence    . ,(perm 0.6)]
+    [initial-proximal-permanence    . ,(perm #;.51 0.6)]
     [sample-size-proximal           . 20]
     [min-threshold-proximal         . 10]
-    [connected-permanence-proximal  . ,(perm 0.50)]
+    [connected-permanence-proximal  . ,(perm #;.6 0.50)]
     [predicted-inhibition-threshold . 20]
     [syn-perm-distal-inc            . ,(perm 0.1)]
     [syn-perm-distal-dec            . ,(perm 0.001)]
-    [initial-distal-permanence      . ,(perm 0.6)]
+    [initial-distal-permanence      . ,(perm #;.51 0.6)]
     [sample-size-distal             . 20]
     [activation-threshold-distal    . 13]
-    [connected-permanence-distal    . ,(perm 0.50)]
+    [connected-permanence-distal    . ,(perm #;.6 0.50)]
     [inertia-factor                 . 1.]
     [seed                           . 42]
     [active-cells                   . ()]
@@ -207,134 +209,6 @@
     [internal-distal-permanences    . #()]
     [distal-permanences             . ()]
     [use-inertia                    . #t]))
-
-;; === Synapses and Permanences ===
-;; ('Permanences' in column_pooler.py correspond to Synapses in HTM-scheme)
-                                                                                            ;
-(define (prune-synapses synapses omits)  ;; Synapses (listof Nat) -> Synapses
-  ;; omit from synapses elements indexed by omits (which is sorted)
-  (let* ( (reslen (fx- (synapses-length synapses) (length omits)))
-          (result (make-synapses reslen)))
-    (let loop ((rx 0) (sx 0) (omits omits))
-      (cond [ (fx=? rx reslen) result ]
-            [ (if (null? omits) #f
-                (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
-            [ else
-                (synapses-set! result rx (synapses-ref synapses sx))
-                (loop (add1 rx) (add1 sx) omits) ]))))
-                                                                                            ;
-(define (adapt-synapses! permanences     ;; Permanences {CellX} {InputX} Perm Perm ->
-          active-cells active-input permanence-increment permanence-decrement)
-  ;; update synapses: strengthen those connected to input, weaken others,
-  ;; remove synapse on zero permanence
-  (for-each
-    (lambda (cellx)
-      (vector-set! permanences cellx 
-        (let ((synapses (vector-ref permanences cellx))
-              (active-input (list->vector active-input)))
-          (let build-s-t-d [ (sx (fx- (synapses-length synapses) 1))
-                             (synapses-to-destroy '()) ]
-            (if (negative? sx)
-                (cond [ (null? synapses-to-destroy) synapses ]
-                      [ (fx=? (length synapses-to-destroy) (synapses-length synapses)) (make-synapses 0) ]
-                      [ else (prune-synapses synapses synapses-to-destroy) ])
-                (let* ( (synapse    (synapses-ref synapses sx))
-                        (prex       (syn-prex synapse))
-                        (permanence (if (fxsearch active-input prex)
-                                      (clip-max (fx+ (syn-perm synapse) permanence-increment))
-                                      (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
-                  (if (zero? permanence)
-                      ;; build synapses-to-destroy indices as sorted list
-                      (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
-                      (begin
-                        (synapses-set! synapses sx (make-syn prex permanence))
-                        (build-s-t-d (fx- sx 1) synapses-to-destroy)))))))))
-    active-cells))
-                                                                                            ;
-(define (add-synapses! permanences       ;; Permanences {CellX} {InputX} Perm ->
-          active-cells active-input initial-permanence)
-  ;; create new synapses for all input bits ('set-zeros-on-outer')
-  (for-each
-    (lambda (cellx)
-      (let ((synapses (vector-ref permanences cellx)))
-        (let add-synapses [ (all-synapses (fxvector->list synapses)) 
-                            (inputs active-input) ]
-          (if (null? inputs)
-            (vector-set! permanences cellx (list->fxvector all-synapses))
-            (let* ( (syn-low  (make-syn (car inputs) min-perm))
-                    (syn-high (fx+ syn-low max-perm)))
-              (if (synapses-search synapses syn-low syn-high)
-                (add-synapses all-synapses (cdr inputs))
-                (add-synapses 
-                  (cons (make-syn (car inputs) initial-permanence) all-synapses)
-                  (cdr inputs))))))
-        (vector-set! permanences cellx
-          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
-    active-cells))
-                                                                                            ;
-(define (grow-synapses! permanences      ;; Permanences {CellX} {InputX} {Nat} Perm ->
-          active-cells growth-candidates max-news initial-permanence)
-  ;; create new synapses for some growth-candidates ('set-random-zeros-on-outer')
-  (for-each
-    (lambda (cellx max-new)
-      (when (positive? max-new)
-        (let ((synapses (vector-ref permanences cellx)))
-          (let choose-new-synapses [ (new-synapses (list)) 
-                                     (inputs growth-candidates) ]
-            (if (null? inputs)
-              (vector-set! permanences cellx
-                (list->fxvector 
-                  (append
-                    (fxvector->list synapses)
-                    (if (fx<? max-new (length new-synapses))
-                        (vector->list (vector-sample (list->vector new-synapses) max-new))
-                        new-synapses))))
-              (let* ( (syn-low  (make-syn (car inputs) min-perm))
-                      (syn-high (fx+ syn-low max-perm)))
-                (if (synapses-search synapses syn-low syn-high)
-                  (choose-new-synapses new-synapses (cdr inputs))
-                  (choose-new-synapses 
-                    (cons (make-syn (car inputs) initial-permanence) new-synapses)
-                    (cdr inputs)))))))
-        (vector-set! permanences cellx
-          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
-    active-cells max-news))
-                                                                                            ;
-(define (max-new-by-cell permanences     ;; Permanences {CellX} {InputX} Nat -> {Nat}
-          active-cells active-input sample-size)
-  ;; produce (sample-size - 'n-non-zeros-per-row-on-cols') for each cell
-  (map
-    (lambda (cellx)
-      (let* [ (synapses (vector-ref permanences cellx))
-              (num-synapses (synapses-length synapses)) ]
-        (do [ (sx 0 (add1 sx))
-              (count 0 (if (memv (syn-prex (synapses-ref synapses sx)) active-input)
-                           (add1 count)
-                           count)) ]
-            ((fx=? sx num-synapses) (fx- sample-size count)))))
-    active-cells))
-                                                                                            ;
-(define (right-vec-sum-at-nzgte-thresh   ;; Permanences {InputX} Perm -> (CellVecOf Nat)
-          permanences inputxs threshold)
-  ;; produce counts of overlaps between synapses above threshold and inputs
-  (let* ( (inputxs   (list->vector inputxs))
-          (syn-lows  (vector-map
-                       (lambda (inputx) (make-syn inputx min-perm))
-                       inputxs))
-          (syn-highs (vector-map
-                       (lambda (syn-low) (fx+ syn-low max-perm))
-                       syn-lows)))
-    (vector-map
-      (lambda (synapses)
-        (vector-fold-left
-          (lambda (overlaps syn-low syn-high)
-            (let ((synapse (synapses-search synapses syn-low syn-high)))
-              (if (and synapse (fx>=? (syn-perm synapse) threshold))
-                  (add1 overlaps)
-                  overlaps)))
-            0
-          syn-lows syn-highs))
-      permanences)))
 
 ;; === Column Pooler algorithm ===
                                                                                             ;
@@ -562,6 +436,134 @@
     (add-synapses! permanences active-cells active-input initial-permanence)
     (let ((max-new-by-cell (max-new-by-cell permanences active-cells active-input sample-size)))
       (grow-synapses! permanences active-cells growth-candidate-input max-new-by-cell initial-permanence))))
+
+;; === Synapses and Permanences ===
+;; ('Permanences' in column_pooler.py correspond to Synapses in HTM-scheme)
+                                                                                            ;
+(define (prune-synapses synapses omits)  ;; Synapses (listof Nat) -> Synapses
+  ;; omit from synapses elements indexed by omits (which is sorted)
+  (let* ( (reslen (fx- (synapses-length synapses) (length omits)))
+          (result (make-synapses reslen)))
+    (let loop ((rx 0) (sx 0) (omits omits))
+      (cond [ (fx=? rx reslen) result ]
+            [ (if (null? omits) #f
+                (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
+            [ else
+                (synapses-set! result rx (synapses-ref synapses sx))
+                (loop (add1 rx) (add1 sx) omits) ]))))
+                                                                                            ;
+(define (adapt-synapses! permanences     ;; Permanences {CellX} {InputX} Perm Perm ->
+          active-cells active-input permanence-increment permanence-decrement)
+  ;; update synapses: strengthen those connected to input, weaken others,
+  ;; remove synapse on zero permanence
+  (for-each
+    (lambda (cellx)
+      (vector-set! permanences cellx 
+        (let ((synapses (vector-ref permanences cellx))
+              (active-input (list->vector active-input)))
+          (let build-s-t-d [ (sx (fx- (synapses-length synapses) 1))
+                             (synapses-to-destroy '()) ]
+            (if (negative? sx)
+                (cond [ (null? synapses-to-destroy) synapses ]
+                      [ (fx=? (length synapses-to-destroy) (synapses-length synapses)) (make-synapses 0) ]
+                      [ else (prune-synapses synapses synapses-to-destroy) ])
+                (let* ( (synapse    (synapses-ref synapses sx))
+                        (prex       (syn-prex synapse))
+                        (permanence (if (fxsearch active-input prex)
+                                      (clip-max (fx+ (syn-perm synapse) permanence-increment))
+                                      (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
+                  (if (zero? permanence)
+                      ;; build synapses-to-destroy indices as sorted list
+                      (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
+                      (begin
+                        (synapses-set! synapses sx (make-syn prex permanence))
+                        (build-s-t-d (fx- sx 1) synapses-to-destroy)))))))))
+    active-cells))
+                                                                                            ;
+(define (add-synapses! permanences       ;; Permanences {CellX} {InputX} Perm ->
+          active-cells active-input initial-permanence)
+  ;; create new synapses for all input bits ('set-zeros-on-outer')
+  (for-each
+    (lambda (cellx)
+      (let ((synapses (vector-ref permanences cellx)))
+        (let add-synapses [ (all-synapses (fxvector->list synapses)) 
+                            (inputs active-input) ]
+          (if (null? inputs)
+            (vector-set! permanences cellx (list->fxvector all-synapses))
+            (let* ( (syn-low  (make-syn (car inputs) min-perm))
+                    (syn-high (fx+ syn-low max-perm)))
+              (if (synapses-search synapses syn-low syn-high)
+                (add-synapses all-synapses (cdr inputs))
+                (add-synapses 
+                  (cons (make-syn (car inputs) initial-permanence) all-synapses)
+                  (cdr inputs))))))
+        (vector-set! permanences cellx
+          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
+    active-cells))
+                                                                                            ;
+(define (grow-synapses! permanences      ;; Permanences {CellX} {InputX} {Nat} Perm ->
+          active-cells growth-candidates max-news initial-permanence)
+  ;; create new synapses for some growth-candidates ('set-random-zeros-on-outer')
+  (for-each
+    (lambda (cellx max-new)
+      (when (positive? max-new)
+        (let ((synapses (vector-ref permanences cellx)))
+          (let choose-new-synapses [ (new-synapses (list)) 
+                                     (inputs growth-candidates) ]
+            (if (null? inputs)
+              (vector-set! permanences cellx
+                (list->fxvector 
+                  (append
+                    (fxvector->list synapses)
+                    (if (fx<? max-new (length new-synapses))
+                        (vector->list (vector-sample (list->vector new-synapses) max-new))
+                        new-synapses))))
+              (let* ( (syn-low  (make-syn (car inputs) min-perm))
+                      (syn-high (fx+ syn-low max-perm)))
+                (if (synapses-search synapses syn-low syn-high)
+                  (choose-new-synapses new-synapses (cdr inputs))
+                  (choose-new-synapses 
+                    (cons (make-syn (car inputs) initial-permanence) new-synapses)
+                    (cdr inputs)))))))
+        (vector-set! permanences cellx
+          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
+    active-cells max-news))
+                                                                                            ;
+(define (max-new-by-cell permanences     ;; Permanences {CellX} {InputX} Nat -> {Nat}
+          active-cells active-input sample-size)
+  ;; produce (sample-size - 'n-non-zeros-per-row-on-cols') for each cell
+  (map
+    (lambda (cellx)
+      (let* [ (synapses (vector-ref permanences cellx))
+              (num-synapses (synapses-length synapses)) ]
+        (do [ (sx 0 (add1 sx))
+              (count 0 (if (memv (syn-prex (synapses-ref synapses sx)) active-input)
+                           (add1 count)
+                           count)) ]
+            ((fx=? sx num-synapses) (fx- sample-size count)))))
+    active-cells))
+                                                                                            ;
+(define (right-vec-sum-at-nzgte-thresh   ;; Permanences {InputX} Perm -> (CellVecOf Nat)
+          permanences inputxs threshold)
+  ;; produce counts of overlaps between synapses above threshold and inputs
+  (let* ( (inputxs   (list->vector inputxs))
+          (syn-lows  (vector-map
+                       (lambda (inputx) (make-syn inputx min-perm))
+                       inputxs))
+          (syn-highs (vector-map
+                       (lambda (syn-low) (fx+ syn-low max-perm))
+                       syn-lows)))
+    (vector-map
+      (lambda (synapses)
+        (vector-fold-left
+          (lambda (overlaps syn-low syn-high)
+            (let ((synapse (synapses-search synapses syn-low syn-high)))
+              (if (and synapse (fx>=? (syn-perm synapse) threshold))
+                  (add1 overlaps)
+                  overlaps)))
+            0
+          syn-lows syn-highs))
+      permanences)))
 
 ;; === Vector and list utilities ===
                                                                                             ;

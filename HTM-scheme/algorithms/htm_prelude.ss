@@ -312,40 +312,54 @@
                                                                                             ;
 (define (intersect1d l1 l2)              ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce intersection of sorted lists of fixnums
-  ;; (assert (equal? l1 (list-sort fx<? l1)))
-  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (assert (equal? l1 (list-sort fx<? l1)))
+  ;  (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (let ((result
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(or (null? l1) (null? l2)) (reverse! (unique! fx=? result))]
-          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 result)]
-          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) result)]
+    (cond [(or (null? l1) (null? l2))  (reverse! result)]
+          [(fx<? (car l1) (car l2)) 
+                (loop (cdr l1) l2 result)]
+          [(fx<? (car l2) (car l1)) 
+                (loop l1 (cdr l2) result)]
           [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
+  ;  ) (assert (equal? result (unique! fx=? (append result '()))))
+  ;    (assert (equal? result (list-sort fx<? result)))
+  ;    result))
                                                                                             ;
 (define (union1d l1 l2)                  ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce union of sorted lists of fixnums
-  ;; (assert (equal? l1 (list-sort fx<? l1)))
-  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (assert (equal? l1 (list-sort fx<? l1)))
+  ;  (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (let ((result
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(and (null? l1) (null? l2)) (reverse! (unique! fx=? result))]
-          [(null? l1) (append! (reverse! (unique! fx=? result))
-                               (unique! fx=? (append l2 (list))))]
-          [(null? l2) (append! (reverse! (unique! fx=? result))
-                               (unique! fx=? (append l1 (list))))]
-          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
-          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l2) result))]
-          [else (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
+    (cond [(and (null? l1) (null? l2))  (reverse! result)]
+          [(null? l1) (loop l1 (cdr l2) (cons (car l2) result))]
+          [(null? l2) (loop (cdr l1) l2 (cons (car l1) result))]
+          [(fx<? (car l1) (car l2)) 
+                      (loop (cdr l1) l2 (cons (car l1) result))]
+          [(fx<? (car l2) (car l1)) 
+                      (loop l1 (cdr l2) (cons (car l2) result))]
+          [else       (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
+  ;  ) (assert (equal? result (unique! fx=? (append result '()))))
+  ;    (assert (equal? result (list-sort fx<? result)))
+  ;    result))
                                                                                             ;
 (define (setdiff1d l1 l2)                ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce difference of sorted lists of fixnums
-  ;; (assert (equal? l1 (list-sort fx<? l1)))
-  ;; (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (assert (equal? l1 (list-sort fx<? l1)))
+  ;  (assert (equal? l2 (list-sort fx<? l2)))
+  ;  (let ((result
   (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(null? l1) (reverse! (unique! fx=? result))]
-          [(null? l2) (append! (reverse! (unique! fx=? result))
-                               (unique! fx=? (append l1 (list))))]
-          [(fx<? (car l1) (car l2)) (loop (cdr l1) l2 (cons (car l1) result))]
-          [(fx<? (car l2) (car l1)) (loop l1 (cdr l2) (cons (car l1) result))]
+    (cond [(null? l1)  (reverse! result)]
+          [(or (null? l2) (fx<? (car l1) (car l2)))
+              (loop (cdr l1) l2 (cons (car l1) result))]
+          [(fx>? (car l1) (car l2))
+              (loop l1 (cdr l2) result)]
           [else (loop (cdr l1) (cdr l2) result)])))
-                                                                                            ;
+  ;  ) (assert (equal? result (unique! fx=? (append result '()))))
+  ;    (assert (equal? result (list-sort fx<? result)))
+  ;    result))
+                                                                                              ;
 (define (in1d x1s x2s)                   ;; {X} {X} -> Bits
   ;; produce index mask of x1s that are also in x2s
   (fold-left 
@@ -372,12 +386,14 @@
                                                                                             ;
 (define (threaded-vector-for-each f . vs) ;; (X ... -> ) (vectorof X) ... ->
   ;; in a new thread for each, apply f to elements of vs, return when all finished
-  (let ((todo     (vector-length (car vs)))
-        (mutex    (make-mutex))
-        (finished (make-condition)))
+  (let ((todo      (vector-length (car vs)))
+        (mutex     (make-mutex))
+        (finished  (make-condition))
+        (thread-xs (make-thread-parameter #f)))
     (apply vector-for-each (lambda xs
+        (thread-xs xs)
         (fork-thread (lambda () 
-            (apply f xs)
+            (apply f (thread-xs))
             (with-mutex mutex
               (set! todo (- todo 1))
               (when (zero? todo)

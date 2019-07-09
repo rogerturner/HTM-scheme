@@ -1,6 +1,6 @@
 #!chezscheme
 
-;; === HTM-scheme Apical Tiebreak Temporal Memory Copyright 2019 Roger Turner. ===
+;; === HTM-scheme Apical Tiebreak Temporal Memory algorithm Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2017, Numenta, Inc.                            ;;
@@ -50,11 +50,11 @@ is a union of SDRs (e.g. from bursting minicolumns).
     (tm-predicted-cells        get-predicted-cells)
     (tm-active-basal-segments  get-active-basal-segments)
     (tm-active-apical-segments get-active-apical-segments))
-
   tm                                     ;; for pair/sequence memory
   make-tm
   number-of-cells
   map-segments-to-cells
+  cols-from-cells                        ;; for l2l4tm_patch
   (rename                                ;; for temporal_memory_test
     (create-segment       test:create-segment)
     (tm-basal-connections test:tm-basal-connections)
@@ -172,7 +172,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
 ;; === Apical Tiebreak Temporal Memory Algorithm ===
                                                                                             ;
 (define (reset tm)                       ;; TM ->
-  ;; Clear all cell and segment activity.
+  ;; clear all cell and segment activity
   (tm-active-cells-set!              tm '())
   (tm-winner-cells-set!              tm '())
   (tm-predicted-cells-set!           tm '())
@@ -186,7 +186,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                                                                             ;
 (define (depolarize-cells                ;; TM {CellX} {CellX} Boolean ->
           tm basal-input apical-input learn)
-  ;; Calculate predictions.
+  ;; calculate predictions, save active/matching segments
   (let-values ([(active-apical-segments matching-apical-segments apical-potential-overlaps)
                 (calculate-apical-segment-activity tm apical-input)])
     (let ((reduced-basal-threshold-cells
@@ -206,72 +206,72 @@ is a union of SDRs (e.g. from bursting minicolumns).
         (tm-apical-potential-overlaps-set! tm apical-potential-overlaps)))))
                                                                                             ;
 (define (activate-cells                  ;; TM {ColX} {CellX} {CellX} {CellX} {CellX} Boolean ->
-          tm active-columns basal-reinforce-candidates apical-reinforce-candidates
-          basal-growth-candidates apical-growth-candidates learning)
-  ;; Activate cells in the specified columns, using the result of the previous
-  ;; 'depolarizeCells' as predictions. Then learn.
-  (let*-values (
-    ;; Calculate active cells
-    [ ( correct-predicted-cells bursting-columns)
-          (set-compare tm (tm-predicted-cells tm) active-columns)]
-    [ ( cells-in-bursting-cols)  (get-all-cells-in-columns tm bursting-columns)]
-    [ ( new-active-cells) 
-          (append correct-predicted-cells cells-in-bursting-cols) ]
-    ;; Calculate learning
-    [ ( learning-active-basal-segments
-        learning-matching-basal-segments
-        basal-segments-to-punish
-        new-basal-segment-cells
-        learning-cells)
-          (calculate-basal-learning tm
-            active-columns bursting-columns correct-predicted-cells
-            (tm-active-basal-segments tm) (tm-matching-basal-segments tm)
-            (tm-basal-potential-overlaps tm)) ]
-    [ ( learning-active-apical-segments
-        learning-matching-apical-segments
-        apical-segments-to-punish
-        new-apical-segment-cells)
-          (calculate-apical-learning tm
-            learning-cells active-columns
-            (tm-active-apical-segments tm) (tm-matching-apical-segments tm)
-            (tm-apical-potential-overlaps tm)) ] )
-    (when learning
-      ;; Learn on existing segments
-      (learn tm (tm-basal-connections tm) learning-active-basal-segments
-        basal-reinforce-candidates basal-growth-candidates
-        (tm-basal-potential-overlaps tm) (tm-basal-pre-index tm))
-      (learn tm (tm-basal-connections tm) learning-matching-basal-segments
-        basal-reinforce-candidates basal-growth-candidates
-        (tm-basal-potential-overlaps tm) (tm-basal-pre-index tm))
-      (learn tm (tm-apical-connections tm) learning-active-apical-segments
-        apical-reinforce-candidates apical-growth-candidates
-        (tm-apical-potential-overlaps tm) (tm-apical-pre-index tm))
-      (learn tm (tm-apical-connections tm) learning-matching-apical-segments
-        apical-reinforce-candidates apical-growth-candidates
-        (tm-apical-potential-overlaps tm) (tm-apical-pre-index tm))
-      ;; Punish incorrect predictions
-      (unless (zero? (tm-basal-predicted-segment-decrement tm))
-        (adjust-active-synapses tm (tm-basal-connections tm)
-                                basal-segments-to-punish basal-reinforce-candidates
-                                (- (tm-basal-predicted-segment-decrement tm))))
-      (unless (zero? (tm-apical-predicted-segment-decrement tm))
-        (adjust-active-synapses tm (tm-apical-connections tm)
-                                apical-segments-to-punish apical-reinforce-candidates
-                                (- (tm-apical-predicted-segment-decrement tm))))
-      ;; Grow new segments
-      (when (positive? (length basal-growth-candidates))
-        (learn-on-new-segments tm (tm-basal-connections tm) new-basal-segment-cells 
-                               basal-growth-candidates (tm-basal-pre-index tm)))
-      (when (positive? (length apical-growth-candidates))
-        (learn-on-new-segments tm (tm-apical-connections tm) new-apical-segment-cells
-                               apical-growth-candidates (tm-apical-pre-index tm))))
-    ;; Save the results
-    (tm-active-cells-set! tm (sort! fx<? new-active-cells))
-    (tm-winner-cells-set! tm learning-cells)
-    (tm-predicted-active-cells-set! tm correct-predicted-cells)))
+          tm feedforward-input basal-reinforce-candidates apical-reinforce-candidates
+          basal-growth-candidates apical-growth-candidates learning . bursting-columns)
+  ;; activate cells in cols with feedforward-input; cols with no predicted cell burst; learn
+  (let* (                                ;; calculate active cells
+      (correct-predicted-cells 
+        (cells-in-cols tm (tm-predicted-cells tm) feedforward-input))
+      (bursting-columns   
+        (if (pair? bursting-columns)  (car bursting-columns)
+          (setdiff1d feedforward-input (cols-from-cells tm (tm-predicted-cells tm)))))
+      (new-active-cells 
+        (append correct-predicted-cells (get-all-cells-in-columns tm bursting-columns))))
+  (let*-values (                       ;; calculate learning
+        [ ( learning-active-basal-segments
+            learning-matching-basal-segments
+            basal-segments-to-punish
+            new-basal-segment-cells
+            learning-cells)
+              (calculate-basal-learning tm
+                feedforward-input bursting-columns correct-predicted-cells
+                (tm-active-basal-segments tm) (tm-matching-basal-segments tm)
+                (tm-basal-potential-overlaps tm)) ]
+        [ ( learning-active-apical-segments
+            learning-matching-apical-segments
+            apical-segments-to-punish
+            new-apical-segment-cells)
+              (calculate-apical-learning tm
+                learning-cells feedforward-input
+                (tm-active-apical-segments tm) (tm-matching-apical-segments tm)
+                (tm-apical-potential-overlaps tm)) ] )
+      (when learning
+        ;; Learn on existing segments
+        (learn tm (tm-basal-connections tm) learning-active-basal-segments
+          basal-reinforce-candidates basal-growth-candidates
+          (tm-basal-potential-overlaps tm) (tm-basal-pre-index tm))
+        (learn tm (tm-basal-connections tm) learning-matching-basal-segments
+          basal-reinforce-candidates basal-growth-candidates
+          (tm-basal-potential-overlaps tm) (tm-basal-pre-index tm))
+        (learn tm (tm-apical-connections tm) learning-active-apical-segments
+          apical-reinforce-candidates apical-growth-candidates
+          (tm-apical-potential-overlaps tm) (tm-apical-pre-index tm))
+        (learn tm (tm-apical-connections tm) learning-matching-apical-segments
+          apical-reinforce-candidates apical-growth-candidates
+          (tm-apical-potential-overlaps tm) (tm-apical-pre-index tm))
+        ;; Punish incorrect predictions
+        (unless (zero? (tm-basal-predicted-segment-decrement tm))
+          (adjust-active-synapses tm (tm-basal-connections tm)
+                                  basal-segments-to-punish basal-reinforce-candidates
+                                  (- (tm-basal-predicted-segment-decrement tm))))
+        (unless (zero? (tm-apical-predicted-segment-decrement tm))
+          (adjust-active-synapses tm (tm-apical-connections tm)
+                                  apical-segments-to-punish apical-reinforce-candidates
+                                  (- (tm-apical-predicted-segment-decrement tm))))
+        ;; Grow new segments
+        (when (positive? (length basal-growth-candidates))
+          (learn-on-new-segments tm (tm-basal-connections tm) new-basal-segment-cells 
+                                 basal-growth-candidates (tm-basal-pre-index tm)))
+        (when (positive? (length apical-growth-candidates))
+          (learn-on-new-segments tm (tm-apical-connections tm) new-apical-segment-cells
+                                 apical-growth-candidates (tm-apical-pre-index tm))))
+      ;; Save the results
+      (tm-active-cells-set! tm (sort! fx<? new-active-cells))
+      (tm-winner-cells-set! tm learning-cells)
+      (tm-predicted-active-cells-set! tm correct-predicted-cells))))
                                                                                           ;
 (define (calculate-basal-learning tm     ;; TM {ColX} {ColX} {CellX} {Seg} {Seg} {Nat}
-          active-columns bursting-columns correct-predicted-cells
+          feedforward-input bursting-columns correct-predicted-cells
           active-basal-segments matching-basal-segments basal-potential-overlaps)
   ;; Basic Temporal Memory learning. Correctly predicted cells always have
   ;; active basal segments, and we learn on these segments. In bursting
@@ -280,36 +280,38 @@ is a union of SDRs (e.g. from bursting minicolumns).
   ;; dendrites influence which cells are considered "predicted". So an active
   ;; apical dendrite can prevent some basal segments in active columns from
   ;; learning.
-  ;; Correctly predicted columns
-  (let* ( (learning-active-basal-segments 
-            (filter-segments-by-cell active-basal-segments correct-predicted-cells))
-          (cells-for-matching-basal
-            (map-segments-to-cells matching-basal-segments))
-          (basal-segments-to-punish      ;; here because unique! will mutate cells-for-matching-basal
-            (exclude-segments tm matching-basal-segments cells-for-matching-basal active-columns))
-          (matching-cells (unique! fx=? cells-for-matching-basal)))
-    (let-values ([(matching-cells-in-bursting-columns bursting-columns-with-no-match)
-                  (set-compare tm matching-cells bursting-columns)])
-      (let* ( (learning-matching-basal-segments
-                (choose-best-segment-per-column tm matching-cells-in-bursting-columns
-                  matching-basal-segments basal-potential-overlaps))
-              (new-basal-segment-cells
-                (get-cells-with-fewest-segments tm bursting-columns-with-no-match))
-              (learning-cells 
-                (unique! fx=? (sort! fx<?
-                  (append correct-predicted-cells
-                          (map-segments-to-cells learning-matching-basal-segments)
-                          new-basal-segment-cells 
-                          '())))))       ;; *copy new-basal-segment-cells*
-        (values
-          learning-active-basal-segments
-          learning-matching-basal-segments
-          basal-segments-to-punish
-          new-basal-segment-cells
-          learning-cells)))))
+  (let* ( 
+      (learning-active-basal-segments 
+        (filter-segments-by-cell active-basal-segments correct-predicted-cells))
+      (cells-for-matching-basal
+        (map-segments-to-cells matching-basal-segments))
+      (basal-segments-to-punish      ;; here because unique! will mutate cells-for-matching-basal
+        (exclude-segments tm matching-basal-segments cells-for-matching-basal feedforward-input))
+      (matching-cells (unique! fx=? cells-for-matching-basal))
+      (matching-cells-in-bursting-columns
+        (cells-in-cols tm matching-cells bursting-columns))
+      (bursting-columns-with-no-match
+        (setdiff1d bursting-columns (cols-from-cells tm matching-cells)))
+      (learning-matching-basal-segments
+        (choose-best-segment-per-column tm matching-cells-in-bursting-columns
+          matching-basal-segments basal-potential-overlaps))
+      (new-basal-segment-cells
+        (get-cells-with-fewest-segments tm bursting-columns-with-no-match))
+      (learning-cells 
+        (unique! fx=? (sort! fx<?
+          (append correct-predicted-cells
+                  (map-segments-to-cells learning-matching-basal-segments)
+                  new-basal-segment-cells 
+                  '())))))       ;; *copy new-basal-segment-cells*
+    (values
+      learning-active-basal-segments
+      learning-matching-basal-segments
+      basal-segments-to-punish
+      new-basal-segment-cells
+      learning-cells)))
                                                                                           ;
 (define (calculate-apical-learning tm    ;; TM {CellX} {ColX} {Seg} {Seg} {Nat}
-          learning-cells active-columns  
+          learning-cells feedforward-input  
           active-apical-segments matching-apical-segments apical-potential-overlaps)
   ;; Calculate apical learning for each learning cell.
   ;; The set of learning cells was determined completely from basal segments.
@@ -317,41 +319,42 @@ is a union of SDRs (e.g. from bursting minicolumns).
   ;; Learn on any active segments on learning cells. For cells without active
   ;; segments, learn on the best matching segment. For cells without a matching
   ;; segment, grow a new segment.
-  (let* ( (learning-active-apical-segments 
-            (filter-segments-by-cell active-apical-segments learning-cells))
-          (learning-cells-without-active-apical
-            (setdiff1d learning-cells (map-segments-to-cells learning-active-apical-segments)))
-          (cells-for-matching-apical
-            (map-segments-to-cells matching-apical-segments))
-          (learning-cells-with-matching-apical
-            (intersect1d learning-cells-without-active-apical cells-for-matching-apical))
-          (learning-matching-apical-segments
-            (choose-best-segment-per-cell learning-cells-with-matching-apical
-                                          matching-apical-segments apical-potential-overlaps))
-          (new-apical-segment-cells
-            (setdiff1d learning-cells-without-active-apical learning-cells-with-matching-apical))
-          (apical-segments-to-punish
-            (exclude-segments tm matching-apical-segments cells-for-matching-apical active-columns)))
-        (values
-          learning-active-apical-segments
-          learning-matching-apical-segments
-          apical-segments-to-punish
-          new-apical-segment-cells)))
+  (let* ( 
+      (learning-active-apical-segments 
+        (filter-segments-by-cell active-apical-segments learning-cells))
+      (learning-cells-without-active-apical
+        (setdiff1d learning-cells (map-segments-to-cells learning-active-apical-segments)))
+      (cells-for-matching-apical
+        (map-segments-to-cells matching-apical-segments))
+      (learning-cells-with-matching-apical
+        (intersect1d learning-cells-without-active-apical cells-for-matching-apical))
+      (learning-matching-apical-segments
+        (choose-best-segment-per-cell learning-cells-with-matching-apical
+                                      matching-apical-segments apical-potential-overlaps))
+      (new-apical-segment-cells
+        (setdiff1d learning-cells-without-active-apical learning-cells-with-matching-apical))
+      (apical-segments-to-punish
+        (exclude-segments tm matching-apical-segments cells-for-matching-apical feedforward-input)))
+    (values
+      learning-active-apical-segments
+      learning-matching-apical-segments
+      apical-segments-to-punish
+      new-apical-segment-cells)))
                                                                                           ;
 (define (calculate-apical-segment-activity ;; TM {CellX} -> {Seg} {Seg} (vectorof Nat)
           tm active-input)
-  ;; Calculate the active and matching apical segments for this timestep.
+  ;; calculate active/matching apical segments
   (calculate-segment-activity tm active-input (tm-apical-pre-index tm) 0 '()))
                                                                                             ;
 (define (calculate-basal-segment-activity  ;; TM {CellX} {CellX} -> {Seg} {Seg} (vectorof Nat)
           tm active-input reduced-basal-threshold-cells)
-  ;; Calculate the active and matching basal segments for this timestep.
+  ;; calculate active/matching basal segments
   (calculate-segment-activity tm active-input (tm-basal-pre-index tm)
     (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
                                                                                             ;
 (define (calculate-predicted-cells tm    ;; TM {Seg} {Seg} -> {CellX}
           active-basal-segments active-apical-segments)
-  ;; Calculate the predicted cells, given the set of active segments.
+  ;; calculate predicted cells for given active segments
   (let ((cells-for-basal-segments (unique! fx=? (map-segments-to-cells active-basal-segments))))
     (if (tm-use-apical-tiebreak tm)
       (let ((cells-for-apical-segments (unique! fx=? (map-segments-to-cells active-apical-segments))))
@@ -388,48 +391,48 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                                                                             ;
 (define (learn tm connections            ;; TM Connections {Seg} {CellX} {CellX} (vectorof Nat) (CellVecOf {FlatX}) ->
           learning-segments active-input growth-candidates potential-overlaps pre-index)
-  ;; Adjust synapse permanences, grow new synapses, and grow new segments.
+  ;; adjust synapse permanences, grow new synapses, and grow new segments
   (adjust-synapses tm connections learning-segments active-input)
-  ;; Grow new synapses. Calculate "maxNew", the maximum number of synapses to
-  ;; grow per segment. "maxNew" might be a number or it might be a list of numbers.
-  (let* ( (ss (tm-sample-size tm))
-          (max-new
+  (let* ( 
+      (ss (tm-sample-size tm))
+      (max-new                           ;; Nat | {Nat}
+        (if (fxnegative? ss)
+          (length growth-candidates)
+          (map (lambda (seg)
+              (fx- ss (fxvector-ref potential-overlaps (seg-flatx seg))))
+            learning-segments)))
+      (msps (tm-max-synapses-per-segment tm))
+      (max-new
+          (if (fxnegative? msps)
+            max-new
             (if (fxnegative? ss)
-              (length growth-candidates)
               (map (lambda (seg)
-                  (fx- ss (fxvector-ref potential-overlaps (seg-flatx seg))))
-                learning-segments)))
-          (msps (tm-max-synapses-per-segment tm))
-          (max-new
-              (if (fxnegative? msps)
-                max-new
-                (if (fxnegative? ss)
-                  (map (lambda (seg)
-                      (fxmin max-new
-                        (fx- msps (synapses-length (seg-synapses seg)))))
-                    learning-segments)
-                  (map (lambda (seg m-n)
-                      (fxmin m-n
-                        (fx- msps (synapses-length (seg-synapses seg)))))
-                    learning-segments max-new)))))
-      (grow-synapses-to-sample tm learning-segments growth-candidates max-new pre-index)))
+                  (fxmin max-new
+                    (fx- msps (synapses-length (seg-synapses seg)))))
+                learning-segments)
+              (map (lambda (seg m-n)
+                  (fxmin m-n
+                    (fx- msps (synapses-length (seg-synapses seg)))))
+                learning-segments max-new)))))
+    (grow-synapses-to-sample tm learning-segments growth-candidates max-new pre-index)))
                                                                                             ;
 (define (learn-on-new-segments tm        ;; TM Connections {CellX} {CellX} (CellVecOf {FlatX}) ->
           connections new-segment-cells growth-candidates pre-index)
-  (let* ( (num-new-synapses (length growth-candidates))
-          (num-new-synapses (if (fxnegative? (tm-sample-size tm))
-                              num-new-synapses
-                              (fxmin num-new-synapses (tm-sample-size tm))))
-          (num-new-synapses (if (fxnegative? (tm-max-synapses-per-segment tm))
-                              num-new-synapses
-                              (fxmin num-new-synapses (tm-max-synapses-per-segment tm))))
-          (new-segments (create-segments tm connections new-segment-cells)))
+  ;; create segments for new-segment-cells and connect to growth-candidates
+  (let* ( 
+      (num-new-synapses (length growth-candidates))
+      (num-new-synapses (if (fxnegative? (tm-sample-size tm))
+                          num-new-synapses
+                          (fxmin num-new-synapses (tm-sample-size tm))))
+      (num-new-synapses (if (fxnegative? (tm-max-synapses-per-segment tm))
+                          num-new-synapses
+                          (fxmin num-new-synapses (tm-max-synapses-per-segment tm))))
+      (new-segments (create-segments tm connections new-segment-cells)))
     (grow-synapses-to-sample tm new-segments growth-candidates num-new-synapses pre-index)))
                                                                                             ;
 (define (choose-best-segment-per-cell    ;; {CellX} {Seg} (vectorof Nat) -> {Seg}
           cells all-matching-segments potential-overlaps)
-  ;; For each specified cell, choose its matching segment with largest number
-  ;; of active potential synapses. When there's a tie, the first segment wins.
+  ;; choose matching segment with max active potential synapses (on tie choose first)
   (let next-cell ((cells cells) (learning-segments '()))
     (if (null? cells) 
       (reverse learning-segments)
@@ -447,28 +450,26 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                                                                             ;
 (define (choose-best-segment-per-column  ;; TM {CellX} {Seg} (vectorof Nat) -> {Seg}
           tm matching-cells all-matching-segments potential-overlaps)
-  ;; For all the columns covered by 'matchingCells', choose the column's matching
-  ;; segment with largest number of active potential synapses. When there's a
-  ;; tie, the first segment wins.
-  (let* ( (candidate-segments
-            (filter-segments-by-cell all-matching-segments matching-cells))
-          (cell-scores
-            (map (lambda (segment)
-                (fxvector-ref potential-overlaps (seg-flatx segment)))
-              candidate-segments))
-          (columns-for-candidates
-            (map (/cpc tm) (map-segments-to-cells candidate-segments)))
-          (one-per-column-filter 
-            (argmax-multi cell-scores columns-for-candidates))
-          (learning-segments
-            (vector->list (vector-refs (list->vector candidate-segments)
-                                       (list->vector one-per-column-filter)))))
+  ;; like choose-best-segment-per-cell but for cells in col
+  (let* ( 
+      (candidate-segments
+        (filter-segments-by-cell all-matching-segments matching-cells))
+      (cell-scores
+        (map (lambda (segment)
+            (fxvector-ref potential-overlaps (seg-flatx segment)))
+          candidate-segments))
+      (columns-for-candidates
+        (map (/cpc tm) (map-segments-to-cells candidate-segments)))
+      (one-per-column-filter 
+        (argmax-multi cell-scores columns-for-candidates))
+      (learning-segments
+        (vector->list (vector-refs (list->vector candidate-segments)
+                                   (list->vector one-per-column-filter)))))
     learning-segments))
                                                                                             ;
 (define (get-cells-with-fewest-segments  ;; TM {ColX} -> {CellX}
           tm columnxs)
-  ;; For each column, get the cell that has the fewest total basal segments.
-  ;; Break ties randomly.
+  ;; produce cell for each col with fewest total basal segments; break ties randomly
   (map (lambda (colx)
       (let loop ((cellx (fx* colx (tm-cells-per-column tm)))
                  (candidate-cells '())
@@ -545,29 +546,13 @@ is a union of SDRs (e.g. from bursting minicolumns).
         potsegs))
       napsfs)))
                                                                                             ;
-(define (destroy-segment tm segment)     ;; TM Seg ->
-  ;; make segment's flatx available for re-use
-  (let* ( (flatx (seg-flatx segment))
-          (null-segment (make-seg -1 flatx (make-synapses 0))))
-    (vector-set! (tm-seg-index tm) flatx null-segment)
-    (tm-free-flatx-set! tm (cons flatx (tm-free-flatx tm)))))
-                                                                                            ;
-(define (cellx->colx tm cellx)           ;; TM CellX -> ColX
-  (fxdiv cellx (tm-cells-per-column tm)))
-                                                                                            ;
-(define (add-to-pre-index                ;; CellX Seg (CellVecOf {FlatX}) ->
-          prex seg pre-index)
-  ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
-  (let ((pre-list (vector-ref pre-index prex)))
-    (when (or (null? pre-list) (not (fx=? (seg-flatx seg) (car pre-list))))
-      (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
-                                                                                            ;
 (define (map-segments-to-cells segments) ;; {Seg} -> {CellX}
+  ;; produce cellxs from segments
   (sort! fx<? (map seg-cellx segments)))
                                                                                             ;
 (define (filter-segments-by-cell         ;; {Seg} {CellX} -> {Seg}
           segments cellxs)
-  ;; Return the subset of segments that are on the provided cells.
+  ;; produce subset of segments that are on cellxs
   (filter
     (lambda (segment)
       (memv (seg-cellx segment) cellxs))
@@ -579,8 +564,25 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (synapses-length (seg-synapses segment)))
     segments))
                                                                                             ;
+(define (cellx->colx tm cellx)           ;; TM CellX -> ColX
+  (fxdiv cellx (tm-cells-per-column tm)))
+                                                                                            ;
 (define (/cpc tm)                        ;; TM -> (CellX -> ColX)
   (lambda (cellx) (cellx->colx tm cellx)))
+                                                                                            ;
+(define (cols-from-cells tm cellxs)      ;; TM {CellX} -> {ColX}
+  ;; produce canonical colxs of the cellxs (which are sorted)
+  (unique! fx=? (map (/cpc tm) cellxs)))
+                                                                                            ;
+(define (cells-in-cols tm cellxs colxs)  ;; TM {CellX} {ColX} -> {CellX}
+  ;; produce cellxs for which (col of) cellx is in colxs
+  (reverse!
+    (fold-left (lambda (acc cellx)
+        (if (memv (cellx->colx tm cellx) colxs)
+          (cons cellx acc)
+          acc))
+      (list)
+      cellxs)))
                                                                                             ;
 (define (exclude-segments tm             ;; TM {Seg} {CellX} {ColX} -> {Seg}
           segs cellxs colxs)
@@ -591,30 +593,6 @@ is a union of SDRs (e.g. from bursting minicolumns).
         (cons seg acc)))
     (list)
     segs cellxs))
-                                                                                            ;
-(define (col-intersect tm cellxs colxs)  ;; TM {CellX} {ColX} -> {CellX}
-  ;; produce cells for which (col of) cellx is in colxs
-  (unique! fx=?
-    (fold-left (lambda (acc cellx)
-        (if (memv (cellx->colx tm cellx) colxs)
-          (cons cellx acc)
-          acc))
-      (list)
-      cellxs)))
-                                                                                            ;
-(define (col-difference tm colxs cellxs) ;; TM {ColX} {CellX} -> {ColX}
-  ;; produce cols for which colx is not in (col of) cellxs
-  (let ((cols-for-cells (map (/cpc tm) cellxs)))
-    (fold-left (lambda (acc colx)
-        (if (memv colx cols-for-cells)
-          acc
-          (cons colx acc)))
-      (list)
-      colxs)))
-                                                                                            ;
-(define (set-compare tm a b)             ;; TM {CellX} {ColX} -> {CellX} {ColX}
-  ;; produce intersection (a&b), difference (b-a), using (a/cpc) for compare
-  (values (col-intersect tm a b) (col-difference tm b a)))
                                                                                             ;
 (define (argmax-multi a group-keys)      ;; {Number} {Number} -> {Nat}
   ;; gets the indices of the max values of each group in 'a', grouping the
@@ -635,9 +613,9 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                                                                             ;
 (define (get-all-cells-in-columns tm     ;; TM {ColX} -> {CellX}
            colxs)
-  ;; Calculate all cell indices in the specified columns.
+  ;; produce all cellxs in the colxs
   (let ((cpc (tm-cells-per-column tm)))
-    (apply append 
+    (apply append! 
       (map (lambda (colx)
           (let ((first (fx* colx cpc)))
             (build-list cpc (lambda (i) (fx+ first i)))))
@@ -654,6 +632,13 @@ is a union of SDRs (e.g. from bursting minicolumns).
             [ else
                 (synapses-set! result rx (synapses-ref syns sx))
                 (loop (add1 rx) (add1 sx) omits) ]))))
+                                                                                            ;
+(define (destroy-segment tm segment)     ;; TM Seg ->
+  ;; make segment's flatx available for re-use
+  (let* ( (flatx (seg-flatx segment))
+          (null-segment (make-seg -1 flatx (make-synapses 0))))
+    (vector-set! (tm-seg-index tm) flatx null-segment)
+    (tm-free-flatx-set! tm (cons flatx (tm-free-flatx tm)))))
                                                                                             ;
 (define (adapt-segment tm segment        ;; TM Seg {CellX} Connections Perm Perm ->
           active-input connections permanence-delta permanence-decrement)
@@ -720,6 +705,13 @@ is a union of SDRs (e.g. from bursting minicolumns).
   (let* ( (syn-low  (make-syn cellx min-perm))
           (syn-high (fx+ syn-low max-perm)))
     (synapses-search synapses syn-low syn-high)))
+                                                                                            ;
+(define (add-to-pre-index                ;; CellX Seg (CellVecOf {FlatX}) ->
+          prex seg pre-index)
+  ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
+  (let ((pre-list (vector-ref pre-index prex)))
+    (when (or (null? pre-list) (not (fx=? (seg-flatx seg) (car pre-list))))
+      (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
                                                                                             ;
 (define (grow-synapses                   ;; TM Seg Nat {CellX} (CellVecOf {FlatX}) ->
           tm segment n-desired-new-synapses inputs pre-index)
