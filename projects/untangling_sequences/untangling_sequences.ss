@@ -1,6 +1,6 @@
 #!chezscheme
 
-;; === HTM-scheme/projects/untangling_sequences Copyright 2019 Roger Turner. ===
+;; === HTM-scheme Untangling Sequences project Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2017, Numenta, Inc.                            ;;
