@@ -66,9 +66,9 @@
 
 (define (render6 psm pts)
   (list
-   (lines psm #:color 'RoyalBlue
+   (lines psm #:color 'Red
           #:label "Predicted active cells in sensorimotor layer")
-   (lines pts #:color 'MediumSeaGreen
+   (lines pts #:color 'RoyalBlue
           #:label "Predicted active cells in temporal sequence layer")))
 
 (define (renderH3 rs ys xs)
@@ -157,7 +157,8 @@
                    (so-y (+ so-y (/ so-y 20))))
               
               (plot 
-               #:title "Figure 6' Inferring combined sensorimotor and temporal sequence stream"
+               #:title #;"Figure 6' Inferring combined sensorimotor and temporal sequence stream"
+               "Figure 6' Combined sensorimotor/sequence streams, 7 cortical columns of 150 minicolumns"
                #:x-min -2 #:x-max 81 #:x-label "Input number"
                #:y-min -1 #:y-max (+ so-y (/ so-y 4)) #:y-label "Number of cells"
                (list

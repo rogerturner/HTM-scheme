@@ -55,6 +55,7 @@
   vector-sample
   fxsearch
   key-word-args
+  do-with-progress
   intersect1d
   union1d
   setdiff1d
@@ -309,6 +310,22 @@
          (let ((kv (assq (car default-kv) args)))  ;; if this default in args
            (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
        defaults))
+                                                                                            ;
+(define (do-with-progress n f)              ;; Nat (Nat -> ) ->
+  ;; apply f to 0..n-1 with display of iteration time
+  (define (secs-since t) 
+    (quotient (+ (- (cpu-time) t) 500) 1000))
+  (for-each display `(" starting     " #\return))
+  (flush-output-port (current-output-port))
+  (let ((start (cpu-time)))
+    (do ((i 0 (add1 i))) ((= i n))
+      (let ((step-t0 (cpu-time)))
+        (f i)
+        (let ((step-secs (secs-since step-t0)))
+          (when (or (positive? step-secs) (zero? (modulo i 10)))
+            (for-each display
+              `(#\space ,i ": " ,step-secs "  " ,(secs-since start) "    " #\return))
+            (flush-output-port (current-output-port))))))))
                                                                                             ;
 (define (intersect1d l1 l2)              ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce intersection of sorted lists of fixnums
