@@ -122,6 +122,7 @@
     (random-seq-location               (get 'random-seq-location  #f))
     (intersperse-noise                 (get 'intersperse-noise     0))
     (superimpose-sequence              (get 'superimpose-sequence #f))
+    (interleave-training               (get 'interleave-training  #f))
                                                                                             ;
 ;; create the sequences and objects
     (random-sdr 
@@ -138,7 +139,7 @@
     (location-pool                     ;; Vectorof SDR indexed by LocationSDRX
       (build-vector num-locations (random-sdr external-input-size num-input-bits)))
     (random-locations                  ;; Vectorof SDR indexed by LocationSDRX
-      (build-vector 1000 (random-sdr external-input-size num-input-bits)))
+      (build-vector num-locations (random-sdr external-input-size num-input-bits)))
     (create-random-experiences         ;; Nat Nat Nat -> Experiences
       (lambda (num-exps num-sensations num-locations)
       ;; produce Object experiences, or Sequence experiences when num-locations is zero
@@ -179,25 +180,28 @@
       (let* ( 
           (object?    (sensation-location (vector-ref experience 0)))
           (ns         (vector-length experience))
-          (sensations (if (and object? #t #;(not learn))  ;; infer objects on shuffled sensations
+          (sensations (if object?        ;; shuffle object sensations
                           (vector-sample experience ns)
-                          experience)))
+                          experience))
+          ;; for each sensation of object, ccs get different selection of feature+location
+          ;; for sequences, all ccs get same feature
+          (selects    (build-vector ns (lambda (sx)
+                          (if object?
+                            (build-vector num-cortical-columns (lambda (ccx)
+                                (modulo (+ sx ccx) ns)))
+                            (make-vector num-cortical-columns sx))))))
         (do ((sx 0 (add1 sx))) ((= sx ns))
           (let* ( 
-              ;; for each sensation of object, ccs get different selection of feature+location
-              ;; for sequences, all ccs get same feature
-              (select (if learn
-                        (make-vector num-cortical-columns sx)
-                        (vector-sample (indexes sensations) num-cortical-columns)))
+              (select (vector-ref selects sx))
               (features
                 (build-vector num-cortical-columns (lambda (ccx)
                   (if object?
                     (let ((object-sdr (vector-ref feature-pool
                             (sensation-feature (vector-ref sensations (vector-ref select ccx))))))
                       (if (and superimpose-sequence seq)
-                        (union1d object-sdr 
+                        (unique! fx=? (union1d object-sdr 
                                  (vector-ref feature-pool 
-                                    (sensation-feature (vector-ref (vector-ref sequences seq) sx))))
+                                    (sensation-feature (vector-ref (vector-ref sequences seq) sx)))))
                         object-sdr))
                     (vector-ref feature-pool 
                                 (sensation-feature (vector-ref sensations sx)))))))
@@ -207,9 +211,9 @@
                     (build-vector num-cortical-columns (lambda (ccx)
                       (sensation-location (vector-ref sensations (vector-ref select ccx))))))
                   (build-vector num-cortical-columns (lambda _
-                      (if random-seq-location
-                          (vector-ref random-locations (random 1000))
-                          (vector-ref location-pool (random num-locations))))))))
+                      (vector-ref (if random-seq-location  random-locations 
+                                      location-pool) 
+                                  (random num-locations)))))))
             (do ((_ 0 (add1 _))) ((= _ settling-time))
               (l2l4tm:compute patch features locations (or learn online-learning)))
             (unless (null? report)
@@ -259,17 +263,41 @@
                     (append (get-stats-for train-keys) (list (cons 'feat features)) '())))))
             (l2l4tm:reset patch)))))     ;; reset after each object
                                                                                             ;
+#;> (define (train-all-interleaved)      ;; ->
+      ;; train objects & sequences, interleaving in (sqrt num-repetitions) batches
+      ;; reset only after inner batch of each experience
+      (assert (= num-objects num-sequences))
+      (let*-values (
+        [(n-inner remainder) (exact-integer-sqrt num-repetitions)]
+        [(n-outer)           (if (>= remainder n-inner)
+                                 (add1 n-inner)
+                                 n-inner)])
+      (do-with-progress n-outer
+        (lambda (o)
+          (vector-for-each
+            (lambda (ex)
+              (do ((i 0 (add1 i))) ((fx= i n-inner))
+                (let ((seq (if superimpose-sequence
+                              (vector-ref sequence-order (+ (* ex num-repetitions)
+                                                            (+ (* o n-inner) i)))
+                              #f)))
+                  (unless superimpose-sequence
+                    (have-sensations-of (vector-ref sequences ex) #t #f))
+                  (have-sensations-of (vector-ref objects   ex) #t seq)))
+              (l2l4tm:reset patch))
+            (indexes objects))))))
+                                                                                            ;
 #;> (define (infer-all es)               ;; Experiences ->
       ;; test each experience and save stats for each sensation
-      (vector-for-each (lambda (ex)
+      (do-with-progress (vector-length es)
+        (lambda (ex)
           (have-sensations-of (vector-ref es ex) #f #f
             (lambda (sx features)
               (vector-set! (vector-ref stats ex) sx
                 (append (get-stats-for test-keys)
                         (vector-ref (vector-ref stats ex) sx)
                         '()))))
-          (l2l4tm:reset patch))
-        (indexes es)))
+          (l2l4tm:reset patch))))
                                                                                             ;
 #;> (define (infer-switching)            ;; ->
       ;; test mix of objects & sequences
@@ -286,16 +314,12 @@
           '(seq obj seq obj seq seq obj seq) (build-list 8 id))))
                                                                                             ;
 ;; run experiment: 1 train network
-    (case figure
-      [(f6)
-          (if superimpose-sequence
-              (train-all objects)
-              (begin
-                (train-all objects)
-                (train-all sequences))) ]
-      [else
-          (train-all objects)
-          (train-all sequences) ])
+    (if interleave-training
+        (train-all-interleaved)
+      (begin
+        (unless superimpose-sequence
+          (train-all sequences))
+        (train-all objects)))
 ;;                 2 reset and run inference
     (l2l4tm:reset patch)
     (case figure
@@ -335,12 +359,9 @@
                           (if stats-for-key
                             (case key
                               [(L4pa)  (add-overlap-with 'L4ac)]
-                              [(TMpa)  (add-overlap-with 'TMac)]  #;(vector (attm:cols-from-cells
-                                                (vector-ref (l2l4tm:patch-TMs patch) 0)
-                                                (vector-ref (cdr stats-for-key) 0)))
+                              [(TMpa)  (add-overlap-with 'TMac)]
                               [(TMlnp TMlpa L4lnp L4lpa)
-                                (+ ac #;(apply max (vector->list (cdr stats-for-key))) 
-                                  (vector-average (cdr stats-for-key)))]
+                                (+ ac (vector-average (cdr stats-for-key)))]
                               [else ac])
                             ac)))
                         accs 
@@ -369,9 +390,9 @@
 
 (define exp4a '(
     [figure         .  f4a]
-    [num-sequences  .    5]
+    [num-sequences  .   50]
     [num-objects    .    0]
-    [num-features   .   10]
+    [num-features   .  100]
     [num-locations  .  100]
     [train-keys     . (TMac)]
     [test-keys      . (L4lnp L4lpa TMlnp TMlpa)]))
@@ -407,11 +428,12 @@
 (define (option name parameter)
   ;; accept a few run options on command line
   (case name
-    [("-cc")          `[column-count         . ,(string->number parameter)] ]
-    [("-ncc")         `[num-cortical-columns . ,(string->number parameter)] ]
-    [("-nf")          `[num-features         . ,(string->number parameter)] ]
-    [("-interleave")  `[interleave-training  . ,(string=? "#t" parameter)] ]
-    [("-superimpose") `[superimpose-sequence . ,(string=? "#t" parameter)] ]))
+    [("-cc")    `[column-count         . ,(string->number parameter)] ]
+    [("-ncc")   `[num-cortical-columns . ,(string->number parameter)] ]
+    [("-nf")    `[num-features         . ,(string->number parameter)] ]
+    [("-it")    `[interleave-training  . ,(string=? "#t"  parameter)] ]
+    [("-rsl")   `[random-seq-location  . ,(string=? "#t"  parameter)] ]
+    [("-ss")    `[superimpose-sequence . ,(string=? "#t"  parameter)] ]))
   
 (define (main command-line)              ;; {String} ->
   (let process ((args (reverse command-line)) (options (list)) (parameter "#t"))
@@ -425,6 +447,6 @@
       [else
         (process (cdr args) options (car args))])))
 
-(random-seed! 42 #;(time-second (current-time)))
+(random-seed! #;42 (time-second (current-time)))
         
 (main (command-line-arguments))
