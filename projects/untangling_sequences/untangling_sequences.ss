@@ -89,21 +89,21 @@
       [initial-permanence                 . ,initial-permanence]
       [connected-permanence               . ,connected-permanence]
       [permanence-increment               . ,permanence-increment]
-      [permanence-decrement               . ,(perm 0.03) #;permanence-decrement]
+      [permanence-decrement               . ,permanence-decrement  #;(perm 0.03) ]
       [activation-threshold               . ,activation-threshold]
       [min-threshold                      . ,min-threshold]
       [reduced-basal-threshold            . ,reduced-basal-threshold]
-      [apical-predicted-segment-decrement . ,(perm 0.0) #;predicted-segment-decrement]
+      [apical-predicted-segment-decrement . ,predicted-segment-decrement  #;(perm 0.0) ]
       [basal-predicted-segment-decrement  . ,predicted-segment-decrement])))
     (L4-overrides  (get 'L4-overrides `(
-      [initial-permanence                 . ,(perm 0.21) #;initial-permanence]
+      [initial-permanence                 . ,initial-permanence  #;(perm 0.21) ]
       [connected-permanence               . ,connected-permanence]
       [permanence-increment               . ,permanence-increment]
       [permanence-decrement               . ,permanence-decrement]
       [activation-threshold               . ,activation-threshold]
       [min-threshold                      . ,min-threshold]
       [reduced-basal-threshold            . ,reduced-basal-threshold]
-      [apical-predicted-segment-decrement . ,(perm 0.0) #;predicted-segment-decrement]
+      [apical-predicted-segment-decrement . ,predicted-segment-decrement  #;(perm 0.0) ]
       [basal-predicted-segment-decrement  . ,predicted-segment-decrement])))
     (patch 
       (l2l4tm:make-patch num-cortical-columns column-count num-input-bits
@@ -120,6 +120,7 @@
     (num-repetitions                   (get 'num-repetitions       5))
     (settling-time                     (get 'settling-time         1))
     (random-seq-location               (get 'random-seq-location  #f))
+    (no-seq-location                   (get 'no-seq-location      #f))
     (intersperse-noise                 (get 'intersperse-noise     0))
     (superimpose-sequence              (get 'superimpose-sequence #f))
     (interleave-training               (get 'interleave-training  #f))
@@ -139,7 +140,9 @@
     (location-pool                     ;; Vectorof SDR indexed by LocationSDRX
       (build-vector num-locations (random-sdr external-input-size num-input-bits)))
     (random-locations                  ;; Vectorof SDR indexed by LocationSDRX
-      (build-vector num-locations (random-sdr external-input-size num-input-bits)))
+      (build-vector num-locations (if no-seq-location
+                                      (lambda _ (list))
+                                      (random-sdr external-input-size num-input-bits))))
     (create-random-experiences         ;; Nat Nat Nat -> Experiences
       (lambda (num-exps num-sensations num-locations)
       ;; produce Object experiences, or Sequence experiences when num-locations is zero
@@ -211,11 +214,14 @@
                     (build-vector num-cortical-columns (lambda (ccx)
                       (sensation-location (vector-ref sensations (vector-ref select ccx))))))
                   (build-vector num-cortical-columns (lambda _
-                      (vector-ref (if random-seq-location  random-locations 
+                      (vector-ref (if (or no-seq-location random-seq-location)
+                                      random-locations 
                                       location-pool) 
                                   (random num-locations)))))))
-            (do ((_ 0 (add1 _))) ((= _ settling-time))
-              (l2l4tm:compute patch features locations (or learn online-learning)))
+            (when object?                ;; settling-time applies to L4 location population only
+              (do ((_ 0 (add1 _))) ((>= _ (- settling-time 1)))
+                (l2l4tm:compute patch features locations (or learn online-learning) (l2l4tm:L4 loc))))
+            (l2l4tm:compute patch features locations (or learn online-learning) (l2l4tm:L4 loc seq))
             (unless (null? report)
               ((car report) sx features))))))
                                                                                             ;
@@ -249,8 +255,6 @@
                             (vector-ref sequence-order (+ (* ex num-repetitions) r))
                             #f)))
                 (have-sensations-of e #t seq)
-                (do ((_ 0 (add1 _))) ((= _ intersperse-noise))
-                  (have-sensations-of (vector-ref (create-random-experiences 1 seq-length 0) 0) #t #f))
                                            ;; reset TM between presentations of sequence
                 (unless (sensation-location (vector-ref e 0))
                   (vector-for-each attm:reset (l2l4tm:patch-TMs patch)))))
@@ -261,6 +265,11 @@
                 (lambda (sx features)
                   (vector-set! (vector-ref stats ex) sx 
                     (append (get-stats-for train-keys) (list (cons 'feat features)) '())))))
+            (when (positive? intersperse-noise)
+              (l2l4tm:reset patch))
+            (let ((noise (vector-ref (create-random-experiences 1 seq-length 0) 0)))
+              (do ((_ 0 (add1 _))) ((= _ intersperse-noise))
+                (have-sensations-of noise #t #f)))
             (l2l4tm:reset patch)))))     ;; reset after each object
                                                                                             ;
 #;> (define (train-all-interleaved)      ;; ->
@@ -415,7 +424,7 @@
     [num-repetitions .  30]
     [test-keys       . (L4lpa TMlpa)]))
                                                                                             ;
-(define (run figure options)
+(define (run figure . options)
   (let ((start (statistics)))
     (experiment
       (case figure
@@ -429,11 +438,17 @@
   ;; accept a few run options on command line
   (case name
     [("-cc")    `[column-count         . ,(string->number parameter)] ]
+    [("-in")    `[intersperse-noise    . ,(string->number parameter)] ]
+    [("-it")    `[interleave-training  . ,(string=? "#t"  parameter)] ]
     [("-ncc")   `[num-cortical-columns . ,(string->number parameter)] ]
     [("-nf")    `[num-features         . ,(string->number parameter)] ]
-    [("-it")    `[interleave-training  . ,(string=? "#t"  parameter)] ]
+    [("-no")    `[num-objects          . ,(string->number parameter)] ]
+    [("-nr")    `[num-repetitions      . ,(string->number parameter)] ]
+    [("-ns")    `[num-sequences        . ,(string->number parameter)] ]
+    [("-nsl")   `[no-seq-location      . ,(string=? "#t"  parameter)] ]
     [("-rsl")   `[random-seq-location  . ,(string=? "#t"  parameter)] ]
-    [("-ss")    `[superimpose-sequence . ,(string=? "#t"  parameter)] ]))
+    [("-ss")    `[superimpose-sequence . ,(string=? "#t"  parameter)] ]
+    [("-st")    `[settling-time        . ,(string->number parameter)] ]))
   
 (define (main command-line)              ;; {String} ->
   (let process ((args (reverse command-line)) (options (list)) (parameter "#t"))
