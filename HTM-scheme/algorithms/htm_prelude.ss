@@ -50,8 +50,8 @@
   vector->bitwise
   bitwise-span
   bitwise->list
-  random
   random-seed!
+  random
   vector-sample
   fxsearch
   key-word-args
@@ -62,6 +62,7 @@
   in1d
   include-by-mask
   exclude-by-mask
+  thread-limit!
   threaded-vector-for-each
   define-memoized)
                                                                                             ;
@@ -266,18 +267,18 @@
         (loop (bitwise-copy-bit bits b 0) (cons b result)))))
   )
                                                                                             ;
-(define (random n)                       ;; Nat -> Nat
-  ;; produce random integer in range 0..n-1
-  ;; alternative?: (set! *random-state* (mod (+ 1013904223 (* *random-state* 1664525)) 4294967296))
-  (let ((Lehmer-modulus   2147483647)
-        (Lehmer-multiplier     48271))
-    (set! *random-state* (mod (* *random-state* Lehmer-multiplier) Lehmer-modulus))
-    (mod *random-state* n)))
-                                                                                            ;
-  (define *random-state* 48271)
+  (define random-state 48271)
                                                                                             ;
 (define (random-seed! n)                 ;; Nat ->
-  (set! *random-state* n))
+  (set! random-state n))
+                                                                                            ;
+(define (random n)                       ;; Nat -> Nat
+  ;; produce random integer in range 0..n-1
+  ;; alternative?: (set! random-state (mod (+ 1013904223 (* random-state 1664525)) 4294967296))
+  (let ((Lehmer-modulus   2147483647)
+        (Lehmer-multiplier     48271))
+    (set! random-state (mod (* random-state Lehmer-multiplier) Lehmer-modulus))
+    (mod random-state n)))
                                                                                             ;
 (define (vector-sample source size)      ;; (vectorof X) Nat -> (vectorof X)
   ;; produce random selection of length size from source (using Durstenfeld shuffle)
@@ -401,24 +402,37 @@
         (bitwise->list
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
                                                                                             ;
+  (define thread-limit 7)                ;; #hyperthreads for best wall time, #cores for best cpu?
+                                                                                            ;
+(define (thread-limit! n)                ;; Nat ->
+  (set! thread-limit n))
+                                                                                            ;
 (define (threaded-vector-for-each f . vs) ;; (X ... -> ) (vectorof X) ... ->
   ;; in a new thread for each, apply f to elements of vs, return when all finished
   (let ((todo      (vector-length (car vs)))
+        (threads   0)
         (mutex     (make-mutex))
         (finished  (make-condition))
+        (all-done  (make-condition))
         (thread-xs (make-thread-parameter #f)))
     (apply vector-for-each (lambda xs
+        (with-mutex mutex
+          (when (fx>=? threads thread-limit)
+            (condition-wait finished mutex))
+          (set! threads (add1 threads)))
         (thread-xs xs)
         (fork-thread (lambda () 
             (apply f (thread-xs))
             (with-mutex mutex
+              (set! threads (fx- threads 1))
+              (condition-signal finished)
               (set! todo (- todo 1))
               (when (zero? todo)
-                (condition-signal finished))))))
+                (condition-signal all-done))))))
       vs)
     (with-mutex mutex
       (unless (zero? todo)
-        (condition-wait finished mutex)))))
+        (condition-wait all-done mutex)))))
                                                                                             ;
   ;; List comprehensions from the Programming Praxis standard prelude
   ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)
