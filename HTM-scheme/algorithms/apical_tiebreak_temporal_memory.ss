@@ -728,14 +728,13 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) n-actual))
       (let ((new-prexs (vector-sample (list->vector candidates) n-actual))
             (init-perm (tm-initial-permanence tm)))
+        (vector-sort! fx<? new-prexs)
         (seg-synapses-set! segment 
-          (list->fxvector (sort! fx<?
-              (append! (build-list n-actual
-                  (lambda (newx) 
-                    (let ((new-prex (vector-ref new-prexs newx)))
-                      (add-to-pre-index new-prex segment pre-index)
-                      (make-syn new-prex init-perm))))
-                (fxvector->list (seg-synapses segment))))))))))
+          (list->fxvector (merge! fx<? (build-list n-actual (lambda (newx) 
+                                          (let ((new-prex (vector-ref new-prexs newx)))
+                                            (add-to-pre-index new-prex segment pre-index)
+                                            (make-syn new-prex init-perm))))
+                                       (fxvector->list (seg-synapses segment)))))))))
                                                                                             ;
 (define (create-segment tm               ;; TM CellX Connections -> Seg
           cellx connections)
