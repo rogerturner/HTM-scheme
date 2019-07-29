@@ -345,22 +345,15 @@
   ;    result))
                                                                                             ;
 (define (union1d l1 l2)                  ;; {Fixnum} {Fixnum} -> {Fixnum}
-  ;; produce union of sorted lists of fixnums
-  ;  (assert (equal? l1 (list-sort fx<? l1)))
-  ;  (assert (equal? l2 (list-sort fx<? l2)))
-  ;  (let ((result
-  (let loop ((l1 l1) (l2 l2) (result (list)))
-    (cond [(and (null? l1) (null? l2))  (reverse! result)]
-          [(null? l1) (loop l1 (cdr l2) (cons (car l2) result))]
-          [(null? l2) (loop (cdr l1) l2 (cons (car l1) result))]
-          [(fx<? (car l1) (car l2)) 
-                      (loop (cdr l1) l2 (cons (car l1) result))]
-          [(fx<? (car l2) (car l1)) 
-                      (loop l1 (cdr l2) (cons (car l2) result))]
-          [else       (loop (cdr l1) (cdr l2) (cons (car l1) result))])))
-  ;  ) (assert (equal? result (unique! fx=? (append result '()))))
-  ;    (assert (equal? result (list-sort fx<? result)))
-  ;    result))
+  ;; produce union of sorted lists of fixnums (merge fx<? l1 l2)
+  (cond
+    [(null? l1) l2]
+    [(null? l2) l1]
+    [(fx<? (car l1) (car l2))
+          (cons (car l1) (union1d (cdr l1) l2))]
+    [(fx>? (car l1) (car l2))
+          (cons (car l2) (union1d l1 (cdr l2)))]
+    [else (cons (car l1) (union1d (cdr l1) (cdr l2)))]))
                                                                                             ;
 (define (setdiff1d l1 l2)                ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce difference of sorted lists of fixnums
@@ -402,7 +395,7 @@
         (bitwise->list
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
                                                                                             ;
-  (define thread-limit 7)                ;; #hyperthreads for best wall time, #cores for best cpu?
+  (define thread-limit 7)                ;; #hyperthreads-1 for best wall time, #cores for best cpu?
                                                                                             ;
 (define (thread-limit! n)                ;; Nat ->
   (set! thread-limit n))
@@ -539,6 +532,7 @@
               (append (list x) [key-word-args args '([k1 . 1] [k2 . 2])] ))  ;; end of fn defn
             99 '[k2 . 22] '[k1 . 11] #;'[k3 . 33] ] '(99 11 22) )]  ;; apply fn to 99 '[k2 ...
   [expect ( [intersect1d     '(1 2 3 4) '(1 3 5)] '(1 3) )]
+  [expect ( [union1d         '(1 2 4 5) '(1 3 5)] '(1 2 3 4 5) )]
   [expect ( [setdiff1d       '(1 2 3 4) '(1 3 5)] '(2 4) )]
   [expect ( [in1d            '(1 2 3 4) '(1 3 5)]  #b101 )]
   [expect ( [include-by-mask '(1 2 3 4)  #b1101]  '(1 3 4))]
