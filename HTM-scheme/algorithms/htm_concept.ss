@@ -21,9 +21,9 @@
   ;;   X Y -> Z     function with argument types X, Y and result type Z
   ;;   {X}          abbreviation for (Listof X)
   ;;   Nat          natural number (including zero) (Scheme Fixnum or exact Integer)
-  ;;   Perm         Fixnum 0-999 interpreted as a permanence value 0.0-0.999
+  ;;   Perm         Fixnum 0-1000 interpreted as a permanence value 0.0-1.0
   ;;   Synapse      Fixnum combining index of input/presynaptic cell and Perm value
-  ;;   Synapses     vector of Synapse; sorted to facilitate finding pre cell indices
+  ;;   Synapses     vector of Synapse; 32-bit elements; sorted for finding pre cell indices
   ;;   Segment      record with Synapses plus management fields
   ;;   Connections  vector of Segment(s) indexed by cell number in Layer
   ;;   Layer        record with algorithm parameters and Connections of layer cells 
@@ -40,6 +40,9 @@
   ;; prefix or rename when importing. Abbreviations are used for record type names to
   ;; avoid excessively long accessor forms.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  ;;
+  ;; "Lisp's parentheses are the bumps on the top of Lego" [Paul Graham]
+  ;; "The only honest function names are car and cdr"  [citation needed]
 
 (library (HTM-scheme HTM-scheme algorithms htm_concept)
                                                                                             ;
@@ -53,6 +56,8 @@
   synapses-ref
   synapses-set!
   synapses-length
+  synapses->list
+  list->synapses
   make-syn
   syn-prex
   syn-perm
@@ -71,8 +76,8 @@
 
 ;; --- Permanence values ---
                                                                                             ;
-(define max-perm (- fx3 1))
-(define min-perm 0)
+(define max-perm fx3)
+(define min-perm   0)
                                                                                             ;
 (define (clip-max perm)                  ;; Perm -> Perm
   (fxmin max-perm perm))
@@ -80,11 +85,37 @@
 (define (clip-min perm)                  ;; Perm -> Perm
   (fxmax min-perm perm))
                                                                                             ;
-(define (perm x)                         ;; Number[0.0-.999] -> Perm
+(define (perm x)                         ;; Number[0.0-1.0] -> Perm
   (clip-max (clip-min (fx3<- x))))
 
-;; --- Synapses ---
+;; --- Synapses: bytevectors on 64-bit, fxvectors on 32-bit ---
                                                                                             ;
+(define prex-shift 1024)
+(define native (native-endianness))
+                                                                                            ;
+(define (make-synapses n)
+  (make-bytevector (fx* n 4)))
+                                                                                            ;
+(define (synapses-ref v n)
+  (bytevector-s32-native-ref v (fx* n 4)))
+                                                                                            ;
+(define (synapses-set! v n s32)
+  (bytevector-s32-native-set! v (fx* n 4) s32))
+                                                                                            ;
+(define (synapses-length v)
+  (fxdiv (bytevector-length v) 4))
+                                                                                            ;
+(define (synapses->list v)
+  (bytevector->sint-list v native 4))
+                                                                                            ;
+(define (list->synapses l)
+  (sint-list->bytevector l native 4))
+                                                                                            ;
+(define prex-offset                      ;; -> Fixnum
+  ;; don't offset synapse values
+  0)
+                                                                                            ;
+#|
 (define-syntax make-synapses             ;; Nat [Fixnum] -> Synapses
   (identifier-syntax make-fxvector))     ;; (change fxvector to vector for R6RS)
                                                                                             ;
@@ -97,11 +128,16 @@
 (define-syntax synapses-length           ;; Synapses -> Nat
   (identifier-syntax fxvector-length))
                                                                                             ;
-(define prex-shift 1024)
+(define-syntax synapses->list            ;; Synapses -> Nat
+  (identifier-syntax fxvector->list))
+                                                                                            ;
+(define-syntax list->synapses            ;; Synapses -> Nat
+  (identifier-syntax list->fxvector))
                                                                                             ;
 (define prex-offset                      ;; -> Fixnum
   ;; offset synapse values to maximize available pre-cell index
   (add1 (fxdiv (least-fixnum) prex-shift)))
+|#
                                                                                             ;
 (define (make-syn prex perm)             ;; PreX Perm -> Synapse
   (fx+ (fx* (fx+ prex prex-offset) prex-shift) perm))
