@@ -22,6 +22,9 @@
   ;; Ahmad & Hawkins 2017 "Untangling Sequences: Behavior vs. External Causes"
   ;; doi: 10.1101/190678 
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  ;;
+  ;; "Remember that all models are wrong; the practical question is how wrong
+  ;;  do they have to be to not be useful" [George Box]
 
 (import
           (except (chezscheme) add1 make-list random reset)
@@ -53,10 +56,12 @@
                                                                                             ;
 ;; model and learning parameter defaults (overridable by experiment/run parameters)
     (num-cortical-columns         (get 'num-cortical-columns          1))
-    (column-count                 (get 'column-count                512))
-    (num-cells-per-column         (get 'num-cells-per-column         10))
+    (num-minicolumns              (get 'column-count                150))
+    (num-cells-per-l4pop          (get 'num-cells-per-l4pop          10))
     (num-input-bits               (get 'num-input-bits (min 20 (max 5 
-                                          (int<- (* column-count 0.04))))))
+                                          (int<- (* num-minicolumns 0.04))))))
+    (external-input-size          (if (>= num-minicolumns 512) 1024
+                                      (max 500 (* 2 num-minicolumns))))
     (initial-permanence           (get 'initial-permanence   (perm 0.41)))
     (connected-permanence         (get 'connected-permanence (perm 0.6 )))
     (permanence-increment         (get 'permanence-increment (perm 0.1 )))
@@ -73,25 +78,14 @@
                                                                                             ;
 ;; setup network: override algorithm default parameters (scaled to values above)
     (L2-overrides  (get 'L2-overrides `(
-      [cell-count                         . ,(* 2 column-count num-cells-per-column)]
-      [sample-size-proximal               . ,15 #;(int<- (* 0.75 num-input-bits))]
-      [min-threshold-proximal             . ,10 #;(int<- (* 0.5  num-input-bits))]
-      [predicted-inhibition-threshold     . ,15 #;(int<- (* 0.8  num-input-bits))]
-      [sample-size-distal                 . ,40 #;(* 2 num-input-bits)]
-      [activation-threshold-distal        . ,12 #;(int<- (* 0.6  num-input-bits))]
-      [sdr-size                           . ,40 #;(* 2 num-input-bits)]
+      [sample-size-proximal               . ,(max 6 (int<- (* 0.75 num-input-bits)))]
+      [min-threshold-proximal             . ,(max 4 (int<- (* 0.5  num-input-bits)))]
+      [predicted-inhibition-threshold     . ,(max 6 (int<- (* 0.8  num-input-bits)))]
+      [sample-size-distal                 . ,(* 2 num-input-bits)]
+      [activation-threshold-distal        . ,(max 4 (int<- (* 0.6  num-input-bits)))]
+      [sdr-size                           . ,(* 2 num-input-bits)]
       [syn-perm-proximal-dec              . ,(perm 0.001)]
       [online-learning                    . ,online-learning])))
-    (TM-overrides  (get 'TM-overrides `(
-      [initial-permanence                 . ,initial-permanence]
-      [connected-permanence               . ,connected-permanence]
-      [permanence-increment               . ,permanence-increment]
-      [permanence-decrement               . ,permanence-decrement  #;(perm 0.03) ]
-      [activation-threshold               . ,activation-threshold]
-      [min-threshold                      . ,min-threshold]
-      [reduced-basal-threshold            . ,reduced-basal-threshold]
-      [apical-predicted-segment-decrement . ,predicted-segment-decrement  #;(perm 0.0) ]
-      [basal-predicted-segment-decrement  . ,predicted-segment-decrement])))
     (L4-overrides  (get 'L4-overrides `(
       [initial-permanence                 . ,initial-permanence  #;(perm 0.21) ]
       [connected-permanence               . ,connected-permanence]
@@ -104,8 +98,8 @@
       [basal-predicted-segment-decrement  . ,predicted-segment-decrement])))
     (L4pop (l2l4:L4 p4 ss4L4 ss4L23))
     (patch 
-      (l2l4:make-patch num-cortical-columns column-count num-input-bits
-        enable-feedback L2-overrides L4-overrides TM-overrides))
+      (l2l4:make-patch num-cortical-columns num-minicolumns num-cells-per-l4pop num-input-bits
+        external-input-size L2-overrides L4-overrides))
                                                                                             ;
 ;; default experiment parameters (overridable)
     (figure                            (get 'figure               'z))
@@ -118,7 +112,7 @@
     (num-repetitions                   (get 'num-repetitions       5))
     (settling-time                     (get 'settling-time         1))
     (random-seq-location               (get 'random-seq-location  #f))
-    (no-seq-location                   (get 'no-seq-location      #f))
+    (location-per-sequence             (get 'location-per-sequence #f))
     (intersperse-noise                 (get 'intersperse-noise     0))
     (superimpose-sequence              (get 'superimpose-sequence #f))
     (interleave-training               (get 'interleave-training  #f))
@@ -130,17 +124,12 @@
         (let ((range (build-vector size id)))
           (lambda _ (list-sort fx<? (vector->list 
               (vector-sample range bits)))))))
-    (external-input-size
-      (if (<= 512 column-count) 1024
-          (max 500 (* 2 column-count))))
     (feature-pool                      ;; Vectorof SDR indexed by FeatureSDRX
-      (build-vector num-features  (random-sdr column-count num-input-bits)))
+      (build-vector num-features  (random-sdr num-minicolumns num-input-bits)))
     (location-pool                     ;; Vectorof SDR indexed by LocationSDRX
       (build-vector num-locations (random-sdr external-input-size (* 5 num-input-bits))))
     (random-locations                  ;; Vectorof SDR indexed by LocationSDRX
-      (build-vector num-locations (if no-seq-location
-                                      (lambda _ (list))
-                                      (random-sdr external-input-size (* 5 num-input-bits)))))
+      (build-vector num-locations (random-sdr external-input-size (* 5 num-input-bits))))
     (create-random-experiences         ;; Nat Nat Nat -> Experiences
       (lambda (num-exps num-sensations num-locations)
       ;; produce Object experiences, or Sequence experiences when num-locations is zero
@@ -181,16 +170,21 @@
       (let* ( 
           (object?    (sensation-location (vector-ref experience 0)))
           (ns         (vector-length experience))
-          (sensations (if object?        ;; shuffle object sensations
+          ;; shuffle object sensations except on final training presentation
+          (sensations (if (and object? (null? report))
                           (vector-sample experience ns)
                           experience))
           ;; for each sensation of object, ccs get different selection of feature+location
-          ;; for sequences, all ccs get same feature
+          ;; for sequences, all ccs get same feature, different random location
           (selects    (build-vector ns (lambda (sx)
                           (if object?
                             (build-vector num-cortical-columns (lambda (ccx)
                                 (modulo (+ sx ccx) ns)))
-                            (make-vector num-cortical-columns sx))))))
+                            (make-vector num-cortical-columns sx)))))
+          (seq-locations
+                  (build-vector num-cortical-columns (lambda _
+                      (vector-ref (if random-seq-location  random-locations  location-pool) 
+                                  (random num-locations))))))
         (do ((sx 0 (add1 sx))) ((= sx ns))
           (let* ( 
               (select (vector-ref selects sx))
@@ -211,11 +205,10 @@
                   (vector-refs location-pool
                     (build-vector num-cortical-columns (lambda (ccx)
                       (sensation-location (vector-ref sensations (vector-ref select ccx))))))
-                  (build-vector num-cortical-columns (lambda _
-                      (vector-ref (if (or no-seq-location random-seq-location)
-                                      random-locations 
-                                      location-pool) 
-                                  (random num-locations)))))))
+                  (if location-per-sequence  seq-locations
+                      (build-vector num-cortical-columns (lambda _
+                          (vector-ref (if random-seq-location  random-locations  location-pool) 
+                                      (random num-locations))))))))
             (when object?                ;; settling-time applies to L4 location population only
               (do ((_ 0 (add1 _))) ((>= _ (- settling-time 1)))
                 (l2l4:compute patch features locations (or learn online-learning) (l2l4:L4 p4 ss4L23))))
@@ -258,7 +251,7 @@
                             #f)))
                 (have-sensations-of e #t seq)
                                            ;; reset TM between presentations of sequence
-                #;(unless (sensation-location (vector-ref e 0))
+                (unless (sensation-location (vector-ref e 0))
                   (l2l4:reset-seq patch))))
             (let ((seq (if superimpose-sequence
                           (vector-ref sequence-order (+ (* ex num-repetitions) (- num-repetitions 1)))
@@ -361,24 +354,25 @@
                     (if (null? (vector-ref sens-for-exp 0))  accs
                       (vector-map (lambda (ac keys-stats)    ;; ..each sensation, average ccs
                           ;; Number (Alistof (vectorof Number)) -> Number
-                        (let ((stats-for-key (assq key keys-stats)))
-                          (define (add-overlap-with train-key)
-                            (let ((trained (assq train-key keys-stats)))
-                              (if trained
-                                (+ ac (vector-average 
-                                        (vector-map (lambda (t a)
-                                            (length (unique! fx=? (intersect1d t a))))
-                                          (cdr trained)
-                                          (cdr stats-for-key))))
-                                ac)))
-                          (if stats-for-key
-                            (case key
-                              [(L4pa)  (add-overlap-with 'L4ac)]
-                              [(TMpa)  (add-overlap-with 'TMac)]
-                              [(TMlnp TMlpa TXlnp TXlpa L4lnp L4lpa)
-                                (+ ac (vector-average (cdr stats-for-key)))]
-                              [else ac])
-                            ac)))
+                          (let ((stats-for-key (assq key keys-stats)))
+                            (define (add-overlap-with train-key)
+                              (let ((trained (assq train-key keys-stats)))
+                                (if trained
+                                  (+ ac (vector-average 
+                                          (vector-map (lambda (t a)
+                                              (length (unique! fx=? (intersect1d t a))))
+                                            (cdr trained)
+                                            (cdr stats-for-key))))
+                                  ac)))
+                            (if stats-for-key
+                              (case key
+                                [(L4pa)  (add-overlap-with 'L4ac)]
+                                [(TMpa)  (add-overlap-with 'TMac)]
+                                [(TXpa)  (add-overlap-with 'TXac)]
+                                [(TMlnp TMlpa TXlnp TXlpa L4lnp L4lpa)
+                                  (+ ac (vector-average (cdr stats-for-key)))]
+                                [else ac])
+                              ac)))
                         accs 
                         sens-for-exp)))        ;; -> (vectorof Number)
                   (build-vector (vector-length (vector-ref stats 0))
@@ -412,8 +406,8 @@
     [num-objects    .    0]
     [num-features   .  100]
     [num-locations  .  100]
-    [train-keys     . (TMac)]
-    [test-keys      . (L4lnp L4lpa TMlnp TMlpa TXlnp TXlpa)]))
+    [train-keys     . (L4ac TMac TXac)]
+    [test-keys      . (L4lnp L4pa TMlnp TMpa TXlnp TXpa)]))
                                                                                             ;
 (define exp5a '(
     [figure         .  f5a]
@@ -421,8 +415,8 @@
     [num-sequences  .    0]
     [num-features   .  100]
     [num-locations  .  100]
-    [train-keys     . (L4ac)]
-    [test-keys      . (L4lnp L4lpa TMlnp TMlpa TXlnp TXlpa)]))
+    [train-keys     . (L4ac TMac TXac)]
+    [test-keys      . (L4lnp L4pa TMlnp TMpa TXlnp TXpa)]))
                                                                                             ;
 (define exp6 '(
     [figure          .  f6]
@@ -431,6 +425,7 @@
     [num-features    .  50]
     [num-locations   . 100]
     [num-repetitions .  30]
+    ;[train-keys      . (L4ac TMac TXac)]
     [test-keys       . (L4lpa TMlpa TXlpa)]))
                                                                                             ;
 (define run                              ;; String [ {KWarg} ] ->
@@ -450,19 +445,19 @@
 (define (option name parameter)          ;; String [Number] -> KWarg
   ;; accept a few run options on command line
   (case name
-    [("-cc")    `[column-count         . ,(string->number parameter)] ]
-    [("-in")    `[intersperse-noise    . ,(string->number parameter)] ]
-    [("-it")    `[interleave-training  . ,(string=? "#t"  parameter)] ]
-    [("-ncc")   `[num-cortical-columns . ,(string->number parameter)] ]
-    [("-nf")    `[num-features         . ,(string->number parameter)] ]
-    [("-nl")    `[num-locations        . ,(string->number parameter)] ]
-    [("-no")    `[num-objects          . ,(string->number parameter)] ]
-    [("-nr")    `[num-repetitions      . ,(string->number parameter)] ]
-    [("-ns")    `[num-sequences        . ,(string->number parameter)] ]
-    [("-nsl")   `[no-seq-location      . ,(string=? "#t"  parameter)] ]
-    [("-rsl")   `[random-seq-location  . ,(string=? "#t"  parameter)] ]
-    [("-ss")    `[superimpose-sequence . ,(string=? "#t"  parameter)] ]
-    [("-st")    `[settling-time        . ,(string->number parameter)] ]))
+    [("-cc")    `[column-count          . ,(string->number parameter)] ]
+    [("-in")    `[intersperse-noise     . ,(string->number parameter)] ]
+    [("-it")    `[interleave-training   . ,(string=? "#t"  parameter)] ]
+    [("-lps")   `[location-per-sequence . ,(string=? "#t"  parameter)] ]
+    [("-ncc")   `[num-cortical-columns  . ,(string->number parameter)] ]
+    [("-nf")    `[num-features          . ,(string->number parameter)] ]
+    [("-nl")    `[num-locations         . ,(string->number parameter)] ]
+    [("-no")    `[num-objects           . ,(string->number parameter)] ]
+    [("-nr")    `[num-repetitions       . ,(string->number parameter)] ]
+    [("-ns")    `[num-sequences         . ,(string->number parameter)] ]
+    [("-rsl")   `[random-seq-location   . ,(string=? "#t"  parameter)] ]
+    [("-ss")    `[superimpose-sequence  . ,(string=? "#t"  parameter)] ]
+    [("-st")    `[settling-time         . ,(string->number parameter)] ]))
   
 (define (main command-line)              ;; {String} ->
   ;; eg $ scheme --program untangling_sequences.wp 6 -cc 150 -it
