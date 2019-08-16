@@ -19,6 +19,8 @@
   #|
   
 Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal memories)
+(see Figure 2 in Izhikevich & Edelman 2008 "Large-scale model of mammalian thalamocortical 
+ systems" https://www.pnas.org/content/pnas/105/9/3593.full.pdf)
 
                ^      ^       v
                |      |       |
@@ -71,20 +73,24 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
   p4)                                    ;; ATTM p4
   (protocol
     (lambda (new)
-      (lambda (bis nib ais loc-overrides seq-overrides)
-        (let ((input-sizes `([basal-input-size  . ,bis] [apical-input-size . ,ais])))
+      (lambda (cc ncl4pop nib bis ais attm-overrides)
+        (let ((dimensions `(
+                            [column-count      . ,cc]
+                            [cells-per-column  . ,ncl4pop]
+                            [basal-input-size  . ,bis]
+                            [apical-input-size . ,ais])))
           (new 
-            (attm:make-tm (append input-sizes seq-overrides (get-default-seq-params bis nib)))
-            (attm:make-tm (append input-sizes loc-overrides (get-default-loc-params bis nib)))
-            (attm:make-tm (append input-sizes loc-overrides (get-default-loc-params bis nib)))))))))
+            (attm:make-tm (append dimensions attm-overrides (get-default-seq-params cc nib)))
+            (attm:make-tm (append dimensions attm-overrides (get-default-loc-params cc nib)))
+            (attm:make-tm (append dimensions attm-overrides (get-default-loc-params cc nib)))))))))
                                                                                             ;
-(define (compute l feature location      ;; Layer SDR SDR SDR Boolean Populations -> SDR
+(define (compute l feature location      ;; Layer SDR SDR SDR Boolean Populations -> SDR SDR
           apical-input learn pop)
   ;; step layer l with sub-layers pop; return active and predicted L2 projecting cells
   (let* ( (prev-ss4L4 (attm:get-active-cells (l4-ss4L4 l)))
           (basal-input (union1d prev-ss4L4 location)))
     (when (enum-set-member? 'ss4L4 pop) 
-      (attm:depolarize-cells (l4-ss4L4 l) basal-input '() learn))
+      (attm:depolarize-cells (l4-ss4L4 l)  basal-input '() learn))
     (when (enum-set-member? 'ss4L23 pop) 
       (attm:depolarize-cells (l4-ss4L23 l) basal-input '() learn))
     (when (enum-set-member? 'p4 pop)
@@ -105,7 +111,7 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
             feature                              ;; feedforward-input
             basal-input                          ;; basal-reinforce-candidates
             '()                                  ;; apical-reinforce-candidates
-            ss4L4-winner-cells   ;; basal-growth-candidates
+            ss4L4-winner-cells                   ;; basal-growth-candidates
             '()                                  ;; apical-growth-candidates
             learn 
             bursting-columns)))
@@ -165,7 +171,7 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
 (define (get-n-synapses-created l pop)
   (get attm:get-n-synapses-created l pop))
                                                                                             ;
-(define (get-default-loc-params input-size num-input-bits)
+(define (get-default-loc-params column-count num-input-bits)
   ;; getDefaultL4Params from l2_l4_inference.py
   (let* ( (sample-size (int<- (* 1.5 num-input-bits)))
           (activation-threshold 
@@ -175,7 +181,7 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
             (case num-input-bits
               [(20) 13] [(10) 8] [else activation-threshold])))
     `(
-      [column-count                       . ,input-size]
+      [column-count                       . ,column-count]
       [cells-per-column                   . 16]
       [initial-permanence                 . ,(perm 0.51)]
       [connected-permanence               . ,(perm 0.6)]
@@ -188,7 +194,7 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
       [reduced-basal-threshold            . ,(int<- (* activation-threshold 0.6))]
       [sample-size                        . ,sample-size])))
                                                                                             ;
-(define (get-default-seq-params input-size num-input-bits)
+(define (get-default-seq-params column-count num-input-bits)
   ;; getDefaultTMParams from combined_sequence_experiment.py
   (let* ( (sample-size (int<- (* 1.5 num-input-bits)))
           (activation-threshold 
@@ -198,7 +204,7 @@ Layer4 consists of ss4L4, ss4L23, and p4 populations (apical tiebreak temporal m
             (case num-input-bits
               [(20) 18] [(10) 8] [else activation-threshold])))
     `(
-      [column-count                       . ,input-size]
+      [column-count                       . ,column-count]
       [cells-per-column                   . 16]
       [initial-permanence                 . ,(perm 0.41)]
       [connected-permanence               . ,(perm 0.6)]

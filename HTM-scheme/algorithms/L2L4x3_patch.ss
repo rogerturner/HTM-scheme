@@ -17,6 +17,8 @@
 
   ;; This L2L4 patch is part of the untangling_sequences project.
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  ;;
+  ;; "When in doubt, use brute force" [Ken Thompson]
   #|
 
 A Patch represents an array of cortical columns constructed from layers
@@ -37,7 +39,7 @@ L2L4 cortical column:
                ^    ^         v                  ai = apical input (to p4 only)
             +--ac---pc--------ai--+              bi = basal input
       +---->bi         L4         |              ff = feedforward input
-      |     +---------------------+              gc = growth candidates  
+      |     +-------ff------------+              gc = growth candidates  
       |             ^                            id = internal distal input
       |             |                            li = lateral input (per cc)
       ^             ^                            pc = predicted cells
@@ -76,18 +78,20 @@ L2L4 cortical column:
   enable-feedback)                       ;; Boolean
   (protocol
     (lambda (new)
-      (lambda (ncc is nib ef cp-overrides loc-overrides seq-overrides)
-        (let* ( 
+      (lambda (ncc cc ncl4pop nib bis cp-overrides attm-overrides)
+        (let* (
+            (l2-cell-count (int<- (* 2.4 cc ncl4pop)))
             (L2s (build-vector ncc (lambda _ 
-                    (l2:make-cp (append cp-overrides (get-default-cp-params is nib))))))
+                    (l2:make-cp (append `([cell-count . ,l2-cell-count])
+                                        cp-overrides
+                                        (get-default-cp-params (* cc ncl4pop) nib))))))
             (ais (l2:number-of-cells (vector-ref L2s 0)))
-            (bis (* is 16))
             (L4s (build-vector ncc (lambda _ 
-                    (l4:make-l4 bis nib ais loc-overrides seq-overrides)))))
+                    (l4:make-l4 cc ncl4pop nib bis ais attm-overrides)))))
           (new L2s
                L4s
                (build-vector ncc (lambda _ '()))
-               ef))))))
+               #t))))))
                                                                                             ;
 (define adjacent-ccs (vector
   '( 1  2  3  4  5  6)
@@ -110,20 +114,20 @@ L2L4 cortical column:
   '(18  1  6  5 16)
   '( 7  1  0  6 17)))
 
-(define (lateral-inputs patch l2 ccx)        ;; -> { {CellX} }
+(define (lateral-inputs patch l2 ccx)    ;; -> { {CellX} }
   ;; produce list of active cell lists for adjacent ccs from prev timestep
   (vector-fold-left
     (lambda (lateral-inputs other-l2 other-prev-active other-ccx)
       (let ((nccm1 (fx- (vector-length (patch-L2s patch)) 1)))
         (if (eq? l2 other-l2)  lateral-inputs
           (cond
-            [(fx=? nccm1 6)          ;; 7 ccs: connect to adjacent cc only
+            [(fx=? nccm1 6)              ;; 7 ccs: connect to adjacent cc only
               (if (or (zero? ccx) (zero? other-ccx))
                 (cons other-prev-active lateral-inputs)
                 (if (fx=? 1 (fxmod (fx- ccx other-ccx) nccm1))
                     (cons other-prev-active lateral-inputs)
                     lateral-inputs))]
-            [(fx=? nccm1 18)         ;; 19 ccs
+            [(fx=? nccm1 18)             ;; 19 ccs
               (if (memv other-ccx (vector-ref adjacent-ccs ccx))
                   (cons other-prev-active lateral-inputs)
                   lateral-inputs)]
@@ -132,8 +136,7 @@ L2L4 cortical column:
     '()
     (patch-L2s patch) (patch-L2-prev-actives patch) (indexes (patch-L2s patch))))
                                                                                             ;
-(define compute 
-(case-lambda 
+(define compute (case-lambda 
   [ (patch features locations learn)
     ;; default is all L4 populations
     (compute patch features locations learn (l4:L4 ss4L4 ss4L23 p4)) ]
@@ -151,7 +154,7 @@ L2L4 cortical column:
         (l2:compute l2
           l4-active-cells                ;; feedforward input
           (lateral-inputs patch l2 ccx)
-          '() #;l4-predicted-cells             ;; feedforward growth candidates
+          '() #;l4-predicted-cells       ;; feedforward growth candidates
           learn
           l4-predicted-cells)))          ;; predicted input
     (patch-L2s patch) (patch-L4s patch) features locations (indexes features))
@@ -179,7 +182,7 @@ L2L4 cortical column:
             (case num-input-bits
               [(20) 5] [(10) 3] [else (int<- (* sample-size-proximal .6))])))
     `(
-      [input-width                   . ,(* input-size 16)]
+      [input-width                   . ,input-size]
       [cell-count                    . 4096]
       [sdr-size                      . 40]
       [syn-perm-proximal-inc         . ,(perm 0.1)]
