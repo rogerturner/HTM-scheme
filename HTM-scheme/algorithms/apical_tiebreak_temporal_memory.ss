@@ -717,25 +717,35 @@ is a union of SDRs (e.g. from bursting minicolumns).
 (define (grow-synapses                   ;; TM Seg Nat {CellX} (CellVecOf {FlatX}) ->
           tm segment n-desired-new-synapses inputs pre-index)
   ;; grow synapses to all inputs that aren't already connected to the segment
-  (let* ( (synapses     (seg-synapses segment))
-          (num-synapses (synapses-length synapses))
-          (candidates   (let loop ((cs '()) (is inputs))
-                          (cond [ (null? is) cs ]
-                                [ (in-synapses? (car is) synapses)
-                                    (loop cs (cdr is)) ]
-                                [ else (loop (cons (car is) cs) (cdr is)) ])))
-          (n-actual     (fxmin n-desired-new-synapses (length candidates))))
-    (when (positive? n-actual)
-      (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) n-actual))
-      (let ((new-prexs (vector-sample (list->vector candidates) n-actual))
-            (init-perm (tm-initial-permanence tm)))
-        (vector-sort! fx<? new-prexs)
-        (seg-synapses-set! segment 
-          (list->fxvector (merge! fx<? (build-list n-actual (lambda (newx) 
-                                          (let ((new-prex (vector-ref new-prexs newx)))
-                                            (add-to-pre-index new-prex segment pre-index)
-                                            (make-syn new-prex init-perm))))
-                                       (fxvector->list (seg-synapses segment)))))))))
+  (let build-candidates ((cs '()) (is inputs) (nc 0))
+    (cond 
+      [ (null? is)
+        (if (fx<=? nc n-desired-new-synapses)
+          (let ((init-perm (tm-initial-permanence tm)))
+            (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) nc))
+            (seg-synapses-set! segment 
+              (list->synapses (merge! fx<? (sort! fx<?
+                                              (let map-car! ((c cs))
+                                                (cond [(null? c) cs]
+                                                  [else
+                                                    (add-to-pre-index (car c) segment pre-index)
+                                                    (set-car! c (make-syn (car c) init-perm))
+                                                    (map-car! (cdr c)) ])))
+                                           (synapses->list (seg-synapses segment))))))
+          (when (positive? n-desired-new-synapses)
+            (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) n-desired-new-synapses))
+            (let ((new-prexs (vector-sample (list->vector cs) n-desired-new-synapses))
+                  (init-perm (tm-initial-permanence tm)))
+              (vector-sort! fx<? new-prexs)
+              (seg-synapses-set! segment 
+                (list->synapses (merge! fx<? (build-list n-desired-new-synapses (lambda (newx) 
+                                                (let ((new-prex (vector-ref new-prexs newx)))
+                                                  (add-to-pre-index new-prex segment pre-index)
+                                                  (make-syn new-prex init-perm))))
+                                             (synapses->list (seg-synapses segment)))))))) ]
+      [ (in-synapses? (car is) (seg-synapses segment))
+          (build-candidates cs (cdr is) nc) ]
+      [ else (build-candidates (cons (car is) cs) (cdr is) (add1 nc)) ])))
                                                                                             ;
 (define (create-segment tm               ;; TM CellX Connections -> Seg
           cellx connections)

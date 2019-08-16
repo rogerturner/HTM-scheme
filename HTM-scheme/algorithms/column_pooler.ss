@@ -175,9 +175,9 @@ creating a cleaner implementation." [Numenta description]
             (cp-min-sdr-size-set! cp (cp-sdr-size cp)))
           (random-seed! (cp-seed cp))
           (cp-proximal-permanences-set! cp
-            (make-vector (cp-cell-count cp) (fxvector)))
+            (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))
           (cp-internal-distal-permanences-set! cp
-            (make-vector (cp-cell-count cp) (fxvector)))
+            (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))
           ;; (distal permanences are allocated when lateral inputs known)
           cp)))))
                                                                                            ;
@@ -226,7 +226,7 @@ creating a cleaner implementation." [Numenta description]
         lateral-inputs feedforward-growth-candidates learn predicted-input)
       (when (fx<? (length (cp-distal-permanences cp)) (length lateral-inputs))
         (cp-distal-permanences-set! cp
-          (make-list (length lateral-inputs) (make-vector (cp-cell-count cp) (fxvector)))))
+          (make-list (length lateral-inputs) (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))))
       (let ((feedforward-growth-candidates
               (if (null? feedforward-growth-candidates) feedforward-input
                   feedforward-growth-candidates)))
@@ -388,7 +388,7 @@ creating a cleaner implementation." [Numenta description]
               (add1 total)
               total))
           total
-          (fxvector->list (vector-ref (cp-proximal-permanences cp) cellx))))
+          (synapses->list (vector-ref (cp-proximal-permanences cp) cellx))))
       0
       cells)))
                                                                                             ;
@@ -486,10 +486,10 @@ creating a cleaner implementation." [Numenta description]
   (for-each
     (lambda (cellx)
       (let ((synapses (vector-ref permanences cellx)))
-        (let add-synapses [ (all-synapses (fxvector->list synapses)) 
+        (let add-synapses [ (all-synapses (synapses->list synapses)) 
                             (inputs active-input) ]
           (if (null? inputs)
-            (vector-set! permanences cellx (list->fxvector all-synapses))
+            (vector-set! permanences cellx (list->synapses all-synapses))
             (let* ( (syn-low  (make-syn (car inputs) min-perm))
                     (syn-high (fx+ syn-low max-perm)))
               (if (synapses-search synapses syn-low syn-high)
@@ -498,35 +498,32 @@ creating a cleaner implementation." [Numenta description]
                   (cons (make-syn (car inputs) initial-permanence) all-synapses)
                   (cdr inputs))))))
         (vector-set! permanences cellx
-          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
+          (list->synapses (list-sort fx<? (synapses->list (vector-ref permanences cellx)))))))
     active-cells))
                                                                                             ;
 (define (grow-synapses! permanences      ;; Permanences {CellX} {InputX} {Nat} Perm ->
-          active-cells growth-candidates max-news initial-permanence)
+          active-cells growth-candidates max-news init-perm)
   ;; create new synapses for some growth-candidates ('set-random-zeros-on-outer')
   (for-each
     (lambda (cellx max-new)
       (when (positive? max-new)
-        (let ((synapses (vector-ref permanences cellx)))
-          (let choose-new-synapses [ (new-synapses (list)) 
-                                     (inputs growth-candidates) ]
-            (if (null? inputs)
-              (vector-set! permanences cellx
-                (list->fxvector 
-                  (append
-                    (fxvector->list synapses)
-                    (if (fx<? max-new (length new-synapses))
-                        (vector->list (vector-sample (list->vector new-synapses) max-new))
-                        new-synapses))))
-              (let* ( (syn-low  (make-syn (car inputs) min-perm))
-                      (syn-high (fx+ syn-low max-perm)))
-                (if (synapses-search synapses syn-low syn-high)
-                  (choose-new-synapses new-synapses (cdr inputs))
-                  (choose-new-synapses 
-                    (cons (make-syn (car inputs) initial-permanence) new-synapses)
-                    (cdr inputs)))))))
         (vector-set! permanences cellx
-          (list->fxvector (list-sort fx<? (fxvector->list (vector-ref permanences cellx)))))))
+          (let ((synapses (vector-ref permanences cellx)))
+            (let build-candidates        ;; {Synapse} {InputX} Nat -> {Synapse}
+                 [ (cs (list)) (is growth-candidates) (nc 0) ]
+              (cond
+                [ (null? is)
+                  (list->synapses (merge! fx<? 
+                                    (sort! fx<?
+                                      (if (fx<=? nc max-new)  cs
+                                          (vector->list (vector-sample (list->vector cs) max-new))))
+                                    (synapses->list synapses))) ]
+                [ else
+                  (let* ( (syn-low  (make-syn (car is) min-perm))
+                          (syn-high (fx+ syn-low max-perm)))
+                    (if (synapses-search synapses syn-low syn-high)
+                      (build-candidates cs (cdr is) nc)
+                      (build-candidates (cons (make-syn (car is) init-perm) cs) (cdr is) (add1 nc)))) ] ))))))
     active-cells max-news))
                                                                                             ;
 (define (max-new-by-cell permanences     ;; Permanences {CellX} {InputX} Nat -> {Nat}
