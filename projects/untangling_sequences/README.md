@@ -4,7 +4,7 @@
 
 This directory contains Scheme code that runs sensorimotor sequences
 in combination with pure temporal sequences, using the HTM-scheme
-implementation of Numenta NuPIC algorithms.
+implementation of Numenta algorithms.
 
 The goal is to test whether a single neural mechanism can
 automatically discover what parts of a changing sensory stream are due
@@ -12,7 +12,21 @@ to movement and which parts are due to external causes, and to learn
 predictive models of both types of causes simultaneously using simple
 learning rules.
 
-### Abstract (From Numenta [draft paper](http://dx.doi.org/10.1101/190678))
+The project models four excitatory cell types using Numenta 
+"Apical Tiebreak Temporal Memory" and "Column Pooler" algorithms: layer 4 pyramids (p4), spiny stellates (ss4(L4) and ss4(L2/3)), and layer 2/3 pyramids (p2/3). The connections between cell populations are based on this extract from [2], figure 8:
+
+![cells](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/untangling_sequences/us_layers_and_cells.png)
+
+Example output:
+
+![figure6](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/untangling_sequences/Figure%206/19x100%20it%20rsl.png)
+
+[1] [Ahmad & Hawkins 2017 Untangling Sequences: Behavior vs. External Causes](http://dx.doi.org/10.1101/190678)
+
+[2] [Izhikevich & Edelman 2008 
+Large-scale model of mammalian thalamocortical systems](http://dx.doi.org/10.1073􏰁/pnas.0712231105)
+
+### Abstract (From Numenta draft paper [1])
 
 There are two fundamental reasons why sensory inputs to the brain change
 over time. Sensory inputs can change due to external factors or they can
@@ -35,14 +49,20 @@ regions contain the anatomical structure required to support this
 mechanism.
 
 ### Usage
-To run one of the experiments using Chez Scheme (threaded 32-bit) and Racket, say the one for Figure 4A:
+To run one of the experiments using Chez Scheme and Racket, say the one for Figure 4A:
 
     $ cd <directory containing HTM-scheme directory>
     $ scheme
     > (load "HTM-scheme/projects/untangling_sequences/untangling_sequences.ss")
-    > (run exp4a AH2017)
+    > (run "4a")  ;; experiment parameters can be overridden: see source
     
     Then in DrRacket File>Open… projects/generate_plots.rkt and Racket>Run
+
+Code can be compiled into a Scheme binary and run with eg
+
+    > (load "HTM-scheme/projects/untangling_sequences/compile-untangling_sequences.ss")
+    
+    $ scheme --program untangling_sequences.wp 6 -ncc 19 -cc 100
 
 Note: the results may not be identical to the charts in the paper, due
 to changes in the random number generator
