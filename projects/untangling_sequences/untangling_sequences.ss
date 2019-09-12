@@ -30,7 +30,7 @@
           (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
-  (prefix (HTM-scheme HTM-scheme algorithms L2L4x3_patch)  l2l4:))
+  (prefix (HTM-scheme HTM-scheme algorithms L2_L4_patch)  l2l4:))
 
 ;; === Types (see htm_concept.ss) ===
 ;; SDR            = Listof Nat
@@ -38,18 +38,18 @@
 ;; FeatureSDRX    = Range num-features
 ;; LocationSDRX   = Range num-locations
 ;; Sensation      = (FeatureSDRX, LocationSDRX|#f)
-;; Object         = Vectorof Sensation
+;; Object         = Vectorof (FeatureSDRX, LocationSDRX)
 ;; Sequence       = Vectorof (FeatureSDRX, #f)
 ;; Experience     = Object|Sequence
 
 (define-record-type sensation (fields
   feature                                ;; SDRX
-  location))                             ;; SDRX
+  location))                             ;; SDRX|#f
 
 (define (experiment exp-args run-args)   ;; KWargs KWargs ->
   ;; train l2l4 patch on object/sequence experiences, test, summarize response
   (let* [
-    (args (append run-args exp-args))
+    (args (append run-args exp-args))    ;; run-args override exp-args
     (get  (lambda (key default)
             (let ((specified (assoc key args)))
               (if specified (cdr specified) default))))
@@ -58,10 +58,8 @@
     (num-cortical-columns         (get 'num-cortical-columns          1))
     (num-minicolumns              (get 'column-count                150))
     (num-cells-per-l4pop          (get 'num-cells-per-l4pop          10))
-    (num-input-bits               (get 'num-input-bits (min 20 (max 5 
-                                          (int<- (* num-minicolumns 0.04))))))
-    (external-input-size          (if (>= num-minicolumns 512) 1024
-                                      (max 500 (* 2 num-minicolumns))))
+    (num-input-bits               (get 'num-input-bits (min 20 (max 4 
+                                          (int<- (* num-minicolumns 0.03))))))
     (initial-permanence           (get 'initial-permanence   (perm 0.41)))
     (connected-permanence         (get 'connected-permanence (perm 0.6 )))
     (permanence-increment         (get 'permanence-increment (perm 0.1 )))
@@ -73,30 +71,34 @@
     (reduced-basal-threshold      (get 'reduced-basal-threshold
                                            (int<- (* activation-threshold 0.6))))
     (predicted-segment-decrement  (get 'predicted-segment-decrement (perm 0.001)))
-    (enable-feedback              (get 'enable-feedback      #t))
     (online-learning              (get 'online-learning      #f))
                                                                                             ;
 ;; setup network: override algorithm default parameters (scaled to values above)
+    (l2-sample-size-proximal      (* 2 num-input-bits))
+    (l2-sample-size-distal        (* 5 num-input-bits))
     (L2-overrides  (get 'L2-overrides `(
-      [sample-size-proximal               . ,(max 6 (int<- (* 0.75 num-input-bits)))]
-      [min-threshold-proximal             . ,(max 4 (int<- (* 0.5  num-input-bits)))]
-      [predicted-inhibition-threshold     . ,(max 6 (int<- (* 0.8  num-input-bits)))]
-      [sample-size-distal                 . ,(* 2 num-input-bits)]
-      [activation-threshold-distal        . ,(max 4 (int<- (* 0.6  num-input-bits)))]
-      [sdr-size                           . ,(* 2 num-input-bits)]
-      [syn-perm-proximal-dec              . ,(perm 0.001)]
-      [online-learning                    . ,online-learning])))
+      [initial-proximal-permanence    . ,initial-permanence]
+      [connected-permanence-proximal  . ,connected-permanence]
+      [initial-distal-permanence      . ,initial-permanence]
+      [connected-permanence-distal    . ,connected-permanence]
+      [sample-size-proximal           . ,l2-sample-size-proximal]
+      [min-threshold-proximal         . ,(max 4 (int<- (* 0.8 l2-sample-size-proximal)))]
+      [predicted-inhibition-threshold . ,l2-sample-size-proximal]
+      [sample-size-distal             . ,l2-sample-size-distal]
+      [activation-threshold-distal    . ,(int<- (* 0.8 l2-sample-size-distal))]
+      [sdr-size                       . ,(* 5 num-input-bits)]
+      [online-learning                . ,online-learning])))
     (L4-overrides  (get 'L4-overrides `(
-      [initial-permanence                 . ,initial-permanence  #;(perm 0.21) ]
+      [initial-permanence                 . ,initial-permanence]
       [connected-permanence               . ,connected-permanence]
       [permanence-increment               . ,permanence-increment]
       [permanence-decrement               . ,permanence-decrement]
       [activation-threshold               . ,activation-threshold]
       [min-threshold                      . ,min-threshold]
       [reduced-basal-threshold            . ,reduced-basal-threshold]
-      [apical-predicted-segment-decrement . ,predicted-segment-decrement  #;(perm 0.0) ]
+      [apical-predicted-segment-decrement . ,predicted-segment-decrement]
       [basal-predicted-segment-decrement  . ,predicted-segment-decrement])))
-    (L4pop (l2l4:L4 p4 ss4L4 ss4L23))
+    (external-input-size (int<- (* 1.5 num-minicolumns num-cells-per-l4pop)))
     (patch 
       (l2l4:make-patch num-cortical-columns num-minicolumns num-cells-per-l4pop num-input-bits
         external-input-size L2-overrides L4-overrides))
@@ -110,7 +112,6 @@
     (num-features                      (get 'num-features        100))
     (num-locations                     (get 'num-locations       100))
     (num-repetitions                   (get 'num-repetitions       5))
-    (settling-time                     (get 'settling-time         1))
     (random-seq-location               (get 'random-seq-location  #f))
     (location-per-sequence             (get 'location-per-sequence #f))
     (intersperse-noise                 (get 'intersperse-noise     0))
@@ -118,22 +119,39 @@
     (interleave-training               (get 'interleave-training  #f))
                                                                                             ;
 ;; create the sequences and objects
-    (random-sdr 
-      (lambda (size bits)         ;; Nat -> (X -> SDR)
-        ;; produce function to generate SDR of size with sparsity bits/size
-        (let ((range (build-vector size id)))
-          (lambda _ (list-sort fx<? (vector->list 
-              (vector-sample range bits)))))))
+    (random-sdr (lambda (size bits)    ;; Nat -> (X -> SDR)
+      ;; produce function to generate SDR of size with sparsity bits/size
+      (let ((range (build-vector size id)))
+        (lambda () (list-sort fx<? (vector->list 
+            (vector-sample range bits)))))))
+    (build-distinct (lambda (n ->sdr)  ;; Nat (-> SDR) -> (vectorof SDR)
+      ;; produce vector of SDRs with minimum overlaps (no more than 3 bits)
+      (let ((v (build-vector n (lambda _ (->sdr)))))
+        (do ((i 1 (add1 i))) ((fx=? i n))
+          (call/cc (lambda (break)
+              (let try-again ((tries 0) (overlap 0))
+                (when (fx>? overlap 3) (error #f "can't generate distinct features or locations"))
+                (if (fx>? tries 100)
+                  (try-again 0 (add1 overlap))
+                  (let ((vi (vector-ref v i)))
+                    (do ((j (fx- i 1) (fx- j 1))) ((fxnegative? j))
+                      (when (fx>? (length (intersect1d (vector-ref v j) vi)) overlap)
+                        (vector-set! v i (->sdr))
+                        (break (try-again (add1 tries) overlap))))))))))
+        v)))
     (feature-pool                      ;; Vectorof SDR indexed by FeatureSDRX
-      (build-vector num-features  (random-sdr num-minicolumns num-input-bits)))
-    (location-pool                     ;; Vectorof SDR indexed by LocationSDRX
-      (build-vector num-locations (random-sdr external-input-size (* 5 num-input-bits))))
+      (build-distinct num-features  (random-sdr num-minicolumns num-input-bits)))
+    (location-pool                     ;; Vectorof SDR
+      (build-distinct (* 2 num-locations) 
+                      (random-sdr external-input-size (int<- (* 2.5 num-input-bits)))))
+    (feature-locations                 ;; Vectorof SDR indexed by LocationSDRX
+      (build-vector num-locations (lambda (i) (vector-ref location-pool i))))
     (random-locations                  ;; Vectorof SDR indexed by LocationSDRX
-      (build-vector num-locations (random-sdr external-input-size (* 5 num-input-bits))))
+      (build-vector num-locations (lambda (i) (vector-ref location-pool (+ i num-locations)))))
     (create-random-experiences         ;; Nat Nat Nat -> Experiences
       (lambda (num-exps num-sensations num-locations)
       ;; produce Object experiences, or Sequence experiences when num-locations is zero
-      (let ((location-array (if (zero? num-locations) #f
+      (let ((location-indexes (if (zero? num-locations) #f
                 (build-vector (max num-locations num-sensations)
                   (if (>= num-locations num-sensations)
                     id
@@ -141,7 +159,7 @@
         (build-vector num-exps (lambda _
           ;; locations are distinct but features can be repeated
           (let ((locations (if (positive? num-locations)
-                               (vector-sample location-array num-sensations)
+                               (vector-sample location-indexes num-sensations)
                                (make-vector num-sensations #f))))
             (build-vector num-sensations (lambda (sx)
                 (make-sensation (random num-features) (vector-ref locations sx))))))))))
@@ -151,11 +169,10 @@
       (create-random-experiences num-objects num-points num-locations))
                                                                                           ;
     ;; Stats is (ExpVectorOf (SensVectorOf (KeyListOf (CCVectorOf Number|{Nat}))))
-    (stats          (build-vector (max num-objects num-sequences)
-                      (lambda _ 
-                        (build-vector (if (eq? figure 'f6)  (* 8 num-points)
-                                          (max num-points seq-length))
-                                      (lambda _ (list))))))
+    (stats  (build-vector (max num-objects num-sequences) (lambda _ 
+                (build-vector (if (eq? figure 'f6)  (* 10 num-points)
+                                  (max num-points seq-length))
+                              (lambda _ (list))))))
     (sequence-order (apply append (make-list num-repetitions (build-list num-sequences id))))
     (sequence-order (vector-sample (list->vector sequence-order) (* num-repetitions num-sequences)))
     (display-timing (get 'display-timing  #t))
@@ -166,7 +183,7 @@
 
 #;> (define (have-sensations-of          ;; Experience Bool ( -> (SDR Nat -> SDR)) [(Nat -> )] ->
               experience learn seq-ord . report)
-      ;; feed each sensation of experience settling-time times, report after each sensation
+      ;; feed each sensation of experience, report after each sensation
       (let* ( 
           (object?    (sensation-location (vector-ref experience 0)))
           (ns         (vector-length experience))
@@ -183,7 +200,7 @@
                             (make-vector num-cortical-columns sx)))))
           (seq-locations
                   (build-vector num-cortical-columns (lambda _
-                      (vector-ref (if random-seq-location  random-locations  location-pool) 
+                      (vector-ref (if random-seq-location  random-locations  feature-locations) 
                                   (random num-locations))))))
         (do ((sx 0 (add1 sx))) ((= sx ns))
           (let* ( 
@@ -202,17 +219,14 @@
                                 (sensation-feature (vector-ref sensations sx)))))))
               (locations
                 (if object?
-                  (vector-refs location-pool
+                  (vector-refs feature-locations
                     (build-vector num-cortical-columns (lambda (ccx)
                       (sensation-location (vector-ref sensations (vector-ref select ccx))))))
                   (if location-per-sequence  seq-locations
                       (build-vector num-cortical-columns (lambda _
-                          (vector-ref (if random-seq-location  random-locations  location-pool) 
+                          (vector-ref (if random-seq-location  random-locations  feature-locations) 
                                       (random num-locations))))))))
-            (when object?                ;; settling-time applies to L4 location population only
-              (do ((_ 0 (add1 _))) ((>= _ (- settling-time 1)))
-                (l2l4:compute patch features locations (or learn online-learning) (l2l4:L4 p4 ss4L23))))
-            (l2l4:compute patch features locations (or learn online-learning) L4pop)
+            (l2l4:compute patch features locations (or learn online-learning))
             (unless (null? report)
               ((car report) sx features))))))
                                                                                             ;
@@ -225,18 +239,18 @@
       (map (lambda (key)
           (cons key
             (case key
-              [(L4lnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:L4 p4))) l2l4:patch-L4s)]
-              [(L4lpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 p4))) l2l4:patch-L4s)]
-              [(L4ac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:L4 p4))) (l2l4:patch-L4s patch))]
-              [(L4pa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 p4))) (l2l4:patch-L4s patch))]
-              [(TMlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:L4 ss4L4))) l2l4:patch-L4s)]
-              [(TMlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 ss4L4))) l2l4:patch-L4s)]
-              [(TMac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:L4 ss4L4))) (l2l4:patch-L4s patch))]
-              [(TMpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 ss4L4))) (l2l4:patch-L4s patch))]
-              [(TXlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:L4 ss4L23))) l2l4:patch-L4s)]
-              [(TXlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 ss4L23))) l2l4:patch-L4s)]
-              [(TXac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:L4 ss4L23))) (l2l4:patch-L4s patch))]
-              [(TXpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:L4 ss4L23))) (l2l4:patch-L4s patch))]
+              [(L4lnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop p4))) l2l4:patch-L4s)]
+              [(L4lpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) l2l4:patch-L4s)]
+              [(L4ac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop p4))) (l2l4:patch-L4s patch))]
+              [(L4pa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) (l2l4:patch-L4s patch))]
+              [(TMlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4L4))) l2l4:patch-L4s)]
+              [(TMlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L4))) l2l4:patch-L4s)]
+              [(TMac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4L4))) (l2l4:patch-L4s patch))]
+              [(TMpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L4))) (l2l4:patch-L4s patch))]
+              [(TXlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4L23))) l2l4:patch-L4s)]
+              [(TXlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L23))) l2l4:patch-L4s)]
+              [(TXac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4L23))) (l2l4:patch-L4s patch))]
+              [(TXpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L23))) (l2l4:patch-L4s patch))]
               )))
         keys))
                                                                                             ;
@@ -261,15 +275,14 @@
                   (vector-set! (vector-ref stats ex) sx 
                     (append (get-stats-for train-keys) (list (cons 'feat features)) '())))))
             (when (positive? intersperse-noise)
-              (l2l4:reset patch))
-            (let ((noise (vector-ref (create-random-experiences 1 seq-length 0) 0)))
-              (do ((_ 0 (add1 _))) ((= _ intersperse-noise))
-                (have-sensations-of noise #t #f)))
+              (let ((noise (vector-ref (create-random-experiences 1 seq-length 0) 0)))
+                (do ((_ 0 (add1 _))) ((= _ intersperse-noise))
+                  (have-sensations-of noise #t #f))))
             (l2l4:reset patch)))))     ;; reset after each object
                                                                                             ;
 #;> (define (train-all-interleaved)      ;; ->
       ;; train objects & sequences, interleaving in (sqrt num-repetitions) batches
-      ;; reset only after inner batch of each experience
+      ;; reset after inner batch of each experience
       (assert (= num-objects num-sequences))
       (let*-values (
         [(n-inner remainder) (exact-integer-sqrt num-repetitions)]
@@ -286,8 +299,15 @@
                                                             (+ (* o n-inner) i)))
                               #f)))
                   (unless superimpose-sequence
-                    (have-sensations-of (vector-ref sequences ex) #t #f))
-                  (have-sensations-of (vector-ref objects   ex) #t seq)))
+                    (have-sensations-of (vector-ref sequences ex) #t #f)
+                    #;(l2l4:reset-seq patch))
+                  (have-sensations-of (vector-ref objects ex) #t seq)))
+              (when (positive? intersperse-noise)
+                (let ((noise (if (zero? (random 2))
+                          (create-random-experiences intersperse-noise seq-length 0)
+                          (create-random-experiences intersperse-noise num-points num-locations))))
+                  (do ((i 0 (add1 i))) ((= i intersperse-noise))
+                    (have-sensations-of (vector-ref noise i) #t #f))))
               (l2l4:reset patch))
             (indexes objects))))))
                                                                                             ;
@@ -305,7 +325,7 @@
                                                                                             ;
 #;> (define (infer-switching)            ;; ->
       ;; test mix of objects & sequences
-      (let ((objectxs (vector-sample (build-vector num-objects id) 8)))
+      (let ((objectxs (vector-sample (build-vector num-objects id) 10)))
         (for-each
           (lambda (item-type ix)
             (have-sensations-of
@@ -315,15 +335,16 @@
               (lambda (sx features)
                 (vector-set! (vector-ref stats 0) (+ (* 10 ix) sx)
                   (get-stats-for test-keys)))))
-          '(seq obj seq obj seq seq obj seq) (build-list 8 id))))
+          '(seq obj seq obj seq seq obj seq obj obj) (build-list 10 id))))
                                                                                             ;
 ;; run experiment: 1 train network
     (if interleave-training
         (train-all-interleaved)
       (begin
+        (train-all objects)
         (unless superimpose-sequence
           (train-all sequences))
-        (train-all objects)))
+        #;(train-all objects)))
 ;;                 2 reset and run inference
     (l2l4:reset patch)
     (case figure
@@ -342,9 +363,7 @@
           [list "using"  run-args]
           (map (lambda (key)             ;; each stats key (Symbol -> )
             (let ((k2  (substring (symbol->string key) 0 2)))
-              (if (or (and (enum-set-member? 'p4 L4pop) (string=? k2 "L4"))
-                        (and (enum-set-member? 'ss4L4 L4pop) (string=? k2 "TM"))
-                        (and (enum-set-member? 'ss4L23 L4pop) (string=? k2 "TX")))
+              (if (or (string=? k2 "L4") (string=? k2 "TM") (string=? k2 "TX"))
                 [cons (symbol->string key)
                 ;; stats is (ExpVectorOf (SensVectorOf (KeyListOf (CCVectorOf Number))))
                 [list (vector->list (vector-map mean   ;; average of exps (for 4a/5a)
@@ -376,14 +395,19 @@
                         accs 
                         sens-for-exp)))        ;; -> (vectorof Number)
                   (build-vector (vector-length (vector-ref stats 0))
-                    (lambda _ 0))
+                    (lambda _ 0.0))
                   stats)) ) ] ]
                 (list (symbol->string key) (list)) )))
             test-keys) ] ))
             'truncate ))
       (when display-timing
         (let ((tenths (div (+ (- (cpu-time) start-time) 50) 100))
-              (sum-ccs (lambda (f pop)
+              (sum-l2  (lambda (f)
+                (vector-fold-left (lambda (sum layer)
+                    (+ sum (f layer)))
+                  0
+                  (l2l4:patch-L2s patch))))
+              (sum-l4 (lambda (f pop)
                 (vector-fold-left (lambda (sum layer)
                     (+ sum (f layer pop)))
                   0
@@ -391,21 +415,30 @@
           (for-each display `(
               ,(symbol->string figure) " " ,@run-args #\newline
               ,(div tenths 10) "." ,(mod tenths 10) "s thread time\n"
-              ,(sum-ccs l2l4:get-n-segments-created (l2l4:L4 ss4L4)) " ss4L4 segments\n"
-              ,(sum-ccs l2l4:get-n-synapses-created (l2l4:L4 ss4L4)) " ss4L4 synapses\n"
-              ,(sum-ccs l2l4:get-n-segments-created (l2l4:L4 ss4L23)) " ss4L23 segments\n"
-              ,(sum-ccs l2l4:get-n-synapses-created (l2l4:L4 ss4L23)) " ss4L23 synapses\n"
-              ,(sum-ccs l2l4:get-n-segments-created (l2l4:L4 p4)) " p4 segments\n"
-              ,(sum-ccs l2l4:get-n-synapses-created (l2l4:L4 p4)) " p4 synapses\n"
+              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4L4 )) "/"
+              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4L4 )) " ss4L4 synapses\n"
+              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4L23)) "/"
+              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4L23)) " ss4L23 synapses\n"
+              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop p4    )) "/"
+              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop p4    )) " p4 basal synapses\n"
+              ,(sum-l4 l2l4:number-of-apical-synapses (l2l4:l4-pop p4   )) "/"
+              ,(sum-l4 l2l4:number-of-apical-segments (l2l4:l4-pop p4   )) " p4 apical synapses\n"
+              ,(sum-l2 l2l4:get-n-l2-proximal-syns) "/"
+              ,(sum-l2 l2l4:get-n-l2-proximal-segs) " p23 proximal synapses\n"
+              ,(sum-l2 l2l4:get-n-l2-distal-syns)   "/"
+              ,(sum-l2 l2l4:get-n-l2-distal-segs)   " p23 distal synapses\n"
+              ,(sum-l2 l2l4:get-n-l2-lateral-syns)  "/" 
+              ,(sum-l2 l2l4:get-n-l2-lateral-segs)  " p23 lateral synapses\n"
               ))))
       ))
 
 (define exp4a '(
     [figure         .  f4a]
-    [num-sequences  .   50]
+    [num-sequences  .    5]
     [num-objects    .    0]
-    [num-features   .  100]
+    [num-features   .   10]
     [num-locations  .  100]
+    [num-repetitions .   20]
     [train-keys     . (L4ac TMac TXac)]
     [test-keys      . (L4lnp L4pa TMlnp TMpa TXlnp TXpa)]))
                                                                                             ;
@@ -455,9 +488,9 @@
     [("-no")    `[num-objects           . ,(string->number parameter)] ]
     [("-nr")    `[num-repetitions       . ,(string->number parameter)] ]
     [("-ns")    `[num-sequences         . ,(string->number parameter)] ]
+    [("-ol")    `[online-learning       . ,(string=? "#t"  parameter)] ]
     [("-rsl")   `[random-seq-location   . ,(string=? "#t"  parameter)] ]
-    [("-ss")    `[superimpose-sequence  . ,(string=? "#t"  parameter)] ]
-    [("-st")    `[settling-time         . ,(string->number parameter)] ]))
+    [("-ss")    `[superimpose-sequence  . ,(string=? "#t"  parameter)] ]))
   
 (define (main command-line)              ;; {String} ->
   ;; eg $ scheme --program untangling_sequences.wp 6 -cc 150 -it

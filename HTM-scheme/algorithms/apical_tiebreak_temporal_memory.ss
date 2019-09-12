@@ -21,25 +21,26 @@
   ;; Translated from numenta htmresearch/.../apical_tiebreak_temporal_memory.py,
   ;; htmresearch/.../numpy_helpers.py, nupic-core/.../SparseMatrixConnections.cpp --
   ;; see comments there for descriptions of functions and parameters.
+  ;; Follows logic of attm.py except:
+  ;;   active-apical-segments always used to produce reduced-basal-threshold-cells
+  ;;   activate-cells has an optional bursting-columns input
   ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
-  #|
+  #| Description from /apical_tiebreak_temporal_memory.py:
 
-A generalized Temporal Memory with apical dendrites that add a "tiebreak".
+  A generalized Temporal Memory with apical dendrites that add a "tiebreak".
 
-Basal connections are used to implement traditional Temporal Memory.
+  Basal connections are used to implement traditional Temporal Memory.
+  The apical connections are used for further disambiguation. If multiple cells
+  in a minicolumn have active basal segments, each of those cells is predicted,
+  unless one of them also has an active apical segment, in which case only the
+  cells with active basal and apical segments are predicted.
 
-The apical connections are used for further disambiguation. If multiple cells
-in a minicolumn have active basal segments, each of those cells is predicted,
-unless one of them also has an active apical segment, in which case only the
-cells with active basal and apical segments are predicted.
-
-In other words, the apical connections have no effect unless the basal input
-is a union of SDRs (e.g. from bursting minicolumns).
   |#
 
 (library (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory)
                                                                                             ;
 (export
+  make-tm
   reset
   depolarize-cells
   activate-cells
@@ -49,12 +50,13 @@ is a union of SDRs (e.g. from bursting minicolumns).
     (tm-winner-cells           get-winner-cells)
     (tm-predicted-cells        get-predicted-cells)
     (tm-active-basal-segments  get-active-basal-segments)
-    (tm-active-apical-segments get-active-apical-segments)
-    (tm-n-segments-created     get-n-segments-created)
-    (tm-n-synapses-created     get-n-synapses-created))
+    (tm-active-apical-segments get-active-apical-segments))
   tm                                     ;; for pair/sequence memory
-  make-tm
   number-of-cells
+  number-of-basal-segments
+  number-of-basal-synapses
+  number-of-apical-segments
+  number-of-apical-synapses
   map-segments-to-cells
   cols-from-cells                        ;; for l2l4_patch
   (rename                                ;; for temporal_memory_test
@@ -111,13 +113,11 @@ is a union of SDRs (e.g. from bursting minicolumns).
     (mutable matching-apical-segments)   ;; (listof Segment)
     (mutable basal-potential-overlaps)   ;; (vectorof Nat) [indexed by flatx]
     (mutable apical-potential-overlaps)  ;; (vectorof Nat) [indexed by flatx]
-    (mutable basal-pre-index)            ;; (CellVecOf (listof FlatX))
-    (mutable apical-pre-index)           ;; (CellVecOf (listof FlatX))
+    (mutable basal-pre-index)            ;; (vectorof {FlatX})
+    (mutable apical-pre-index)           ;; (vectorof {FlatX})
     (mutable seg-index)                  ;; (vectorof Segment) [indexed by flatx]
     (mutable next-flatx)                 ;; Nat: next available index in seg-index
-    (mutable free-flatx)                 ;; (listof Nat): indices available for re-use
-    (mutable n-segments-created)
-    (mutable n-synapses-created))
+    (mutable free-flatx))                ;; (listof Nat): indices available for re-use
   (protocol
     (lambda (new)                        ;; (listof KWarg) -> TM
       (lambda (kwargs)
@@ -125,7 +125,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
                 (num-cells (* (tm-column-count tm) (tm-cells-per-column tm))))
           (tm-basal-connections-set!  tm (make-vector num-cells '()))
           (tm-apical-connections-set! tm (make-vector num-cells '()))
-          (tm-basal-pre-index-set!    tm (make-vector num-cells '()))
+          (tm-basal-pre-index-set!    tm (make-vector (tm-basal-input-size  tm) '()))
           (tm-apical-pre-index-set!   tm (make-vector (tm-apical-input-size tm) '()))
           (tm-seg-index-set!          tm (make-vector (tm-column-count tm)))
           tm)))))
@@ -165,9 +165,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
   [apical-pre-index                      . #()]
   [seg-index                             . #()]
   [next-flatx                            . 0]
-  [free-flatx                            . ()]
-  [n-segments-created                    . 0]
-  [n-synapses-created                    . 0] ))
+  [free-flatx                            . ()] ))
 
 ;; === Apical Tiebreak Temporal Memory Algorithm ===
                                                                                             ;
@@ -189,10 +187,10 @@ is a union of SDRs (e.g. from bursting minicolumns).
   ;; calculate predictions, save active/matching segments
   (let-values ([(active-apical-segments matching-apical-segments apical-potential-overlaps)
                 (calculate-apical-segment-activity tm apical-input)])
-    (let ((reduced-basal-threshold-cells
-            (if (or learn (not (tm-use-apical-modulation-basal-threshold tm)))
-              '()
-              (map-segments-to-cells active-apical-segments))))
+    (let ((reduced-basal-threshold-cells ;; **htmresearch/attm.py has () if learn**
+            (if (tm-use-apical-modulation-basal-threshold tm)
+              (map-segments-to-cells active-apical-segments)
+              '())))
       (let-values ([(active-basal-segments matching-basal-segments basal-potential-overlaps)
                     (calculate-basal-segment-activity tm basal-input
                         reduced-basal-threshold-cells)])
@@ -218,7 +216,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
           (setdiff1d feedforward-input (cols-from-cells tm (tm-predicted-cells tm)))))
       (new-active-cells 
         (append correct-predicted-cells (get-all-cells-in-columns tm bursting-columns))))
-  (let*-values (                       ;; calculate learning
+  (let*-values (                         ;; calculate learning
         [ ( learning-active-basal-segments
             learning-matching-basal-segments
             basal-segments-to-punish
@@ -272,7 +270,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (tm-active-cells-set! tm (sort! fx<? new-active-cells))
       (tm-winner-cells-set! tm learning-cells)
       (tm-predicted-active-cells-set! tm correct-predicted-cells))))
-                                                                                          ;
+                                                                                            ;
 (define (calculate-basal-learning tm     ;; TM {ColX} {ColX} {CellX} {Seg} {Seg} {Nat}
           feedforward-input bursting-columns correct-predicted-cells
           active-basal-segments matching-basal-segments basal-potential-overlaps)
@@ -312,7 +310,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
       basal-segments-to-punish
       new-basal-segment-cells
       learning-cells)))
-                                                                                          ;
+                                                                                            ;
 (define (calculate-apical-learning tm    ;; TM {CellX} {ColX} {Seg} {Seg} {Nat}
           learning-cells feedforward-input  
           active-apical-segments matching-apical-segments apical-potential-overlaps)
@@ -343,7 +341,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
       learning-matching-apical-segments
       apical-segments-to-punish
       new-apical-segment-cells)))
-                                                                                          ;
+                                                                                            ;
 (define (calculate-apical-segment-activity ;; TM {CellX} -> {Seg} {Seg} (vectorof Nat)
           tm active-input)
   ;; calculate active/matching apical segments
@@ -490,6 +488,34 @@ is a union of SDRs (e.g. from bursting minicolumns).
                                                                                             ;
 (define (number-of-cells tm)             ;; TM -> Nat
   (fx* (tm-column-count tm) (tm-cells-per-column tm)))
+                                                                                            ;
+(define (number-of-segments connections) ;; (CellVecOf (listof Segment)) -> Nat
+  (vector-fold-left (lambda (acc segments)
+      (+ acc (length segments)))
+    0
+    connections))
+                                                                                            ;
+(define (number-of-synapses connections) ;; (CellVecOf (listof Segment)) -> Nat
+  (vector-fold-left (lambda (acc segments)
+      (+ acc
+        (fold-left (lambda (acc segment)
+            (+ acc (synapses-length (seg-synapses segment))))
+          0
+          segments)))
+    0
+    connections))
+                                                                                            ;
+(define (number-of-basal-segments tm)    ;; TM -> Nat
+  (number-of-segments (tm-basal-connections tm)))
+                                                                                            ;
+(define (number-of-apical-segments tm)   ;; TM -> Nat
+  (number-of-segments (tm-apical-connections tm)))
+                                                                                            ;
+(define (number-of-basal-synapses tm)    ;; TM -> Nat
+  (number-of-synapses (tm-basal-connections tm)))
+                                                                                            ;
+(define (number-of-apical-synapses tm)   ;; TM -> Nat
+  (number-of-synapses (tm-apical-connections tm)))
 
 ;; === Supporting Functions ===
                                                                                             ;
@@ -532,12 +558,12 @@ is a union of SDRs (e.g. from bursting minicolumns).
               (set! potsegs (cons (vector-ref segments segx) potsegs)))
             (fxvector-set! napsfs segx new-napsfs))
           (update-actsegs segx synapse))))
-    (for-each (lambda (cellx)
-        (let* ((syn-low  (make-syn cellx min-perm))
+    (for-each (lambda (inpx)
+        (let* ((syn-low  (make-syn inpx min-perm))
                (syn-high (fx+ syn-low max-perm)))
           (for-each (lambda (segx)
               (update-potsegs segx syn-low syn-high))
-            (vector-ref pre-index cellx))))
+            (vector-ref pre-index inpx))))
       active-input)
     (values actsegs
       (unique! eq? (sort!
@@ -628,7 +654,7 @@ is a union of SDRs (e.g. from bursting minicolumns).
   ;; omit from synapses elements indexed by omits (which is sorted)
   (let* ( (reslen (fx- (synapses-length syns) (length omits)))
           (result (make-synapses reslen)))
-    (let loop ((rx 0) (sx 0) (omits omits))
+  (let loop ((rx 0) (sx 0) (omits omits))
       (cond [ (fx=? rx reslen) result ]
             [ (if (null? omits) #f
                 (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
@@ -656,7 +682,8 @@ is a union of SDRs (e.g. from bursting minicolumns).
                     (vector-set! connections (seg-cellx segment)
                       (remq segment (vector-ref connections (seg-cellx segment))))
                     (destroy-segment tm segment) ]
-                [ else (seg-synapses-set! segment 
+                [ else
+                    (seg-synapses-set! segment 
                          (prune-synapses synapses synapses-to-destroy)) ])
           (let* ( (synapse    (synapses-ref synapses sx))
                   (prex       (syn-prex synapse))
@@ -711,41 +738,43 @@ is a union of SDRs (e.g. from bursting minicolumns).
           prex seg pre-index)
   ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
   (let ((pre-list (vector-ref pre-index prex)))
-    (when (or (null? pre-list) (not (fx=? (seg-flatx seg) (car pre-list))))
+    (when (not (memv (seg-flatx seg) pre-list))
       (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
                                                                                             ;
 (define (grow-synapses                   ;; TM Seg Nat {CellX} (CellVecOf {FlatX}) ->
           tm segment n-desired-new-synapses inputs pre-index)
   ;; grow synapses to all inputs that aren't already connected to the segment
-  (let build-candidates ((cs '()) (is inputs) (nc 0))
+  (let build-candidates ((cis '())       ;; candidate inputs
+                         (is inputs) (nc 0))
     (cond 
       [ (null? is)
         (if (fx<=? nc n-desired-new-synapses)
           (let ((init-perm (tm-initial-permanence tm)))
-            (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) nc))
             (seg-synapses-set! segment 
-              (list->synapses (merge! fx<? (sort! fx<?
-                                              (let map-car! ((c cs))
-                                                (cond [(null? c) cs]
-                                                  [else
-                                                    (add-to-pre-index (car c) segment pre-index)
-                                                    (set-car! c (make-syn (car c) init-perm))
-                                                    (map-car! (cdr c)) ])))
-                                           (synapses->list (seg-synapses segment))))))
+              (list->synapses (merge! fx<?
+                  (sort! fx<?
+                    (let map-car! 
+                           ((cic cis))   ;; candidate inputs cursor
+                      (cond [(null? cic) cis]
+                        [else
+                          (add-to-pre-index (car cic) segment pre-index)
+                          (set-car! cic (make-syn (car cic) init-perm))
+                          (map-car! (cdr cic)) ])))
+                  (synapses->list (seg-synapses segment))))))
           (when (positive? n-desired-new-synapses)
-            (tm-n-synapses-created-set! tm (fx+ (tm-n-synapses-created tm) n-desired-new-synapses))
-            (let ((new-prexs (vector-sample (list->vector cs) n-desired-new-synapses))
+            (let ((new-prexs (vector-sample (list->vector cis) n-desired-new-synapses))
                   (init-perm (tm-initial-permanence tm)))
               (vector-sort! fx<? new-prexs)
               (seg-synapses-set! segment 
-                (list->synapses (merge! fx<? (build-list n-desired-new-synapses (lambda (newx) 
-                                                (let ((new-prex (vector-ref new-prexs newx)))
-                                                  (add-to-pre-index new-prex segment pre-index)
-                                                  (make-syn new-prex init-perm))))
-                                             (synapses->list (seg-synapses segment)))))))) ]
+                (list->synapses (merge! fx<? 
+                    (build-list n-desired-new-synapses (lambda (newx) 
+                        (let ((new-prex (vector-ref new-prexs newx)))
+                          (add-to-pre-index new-prex segment pre-index)
+                          (make-syn new-prex init-perm))))
+                    (synapses->list (seg-synapses segment)))))))) ]
       [ (in-synapses? (car is) (seg-synapses segment))
-          (build-candidates cs (cdr is) nc) ]
-      [ else (build-candidates (cons (car is) cs) (cdr is) (add1 nc)) ])))
+          (build-candidates cis (cdr is) nc) ]
+      [ else (build-candidates (cons (car is) cis) (cdr is) (add1 nc)) ])))
                                                                                             ;
 (define (create-segment tm               ;; TM CellX Connections -> Seg
           cellx connections)
@@ -763,7 +792,6 @@ is a union of SDRs (e.g. from bursting minicolumns).
       (tm-next-flatx-set! tm (add1 new-flatx))
       (tm-free-flatx-set! tm (cdr (tm-free-flatx tm))))
     (vector-set! connections cellx (cons segment segments))
-    (tm-n-segments-created-set! tm (add1 (tm-n-segments-created tm)))
     segment))
                                                                                             ;
 (define (create-segments tm              ;; TM Connections {CellX} -> {Seg}

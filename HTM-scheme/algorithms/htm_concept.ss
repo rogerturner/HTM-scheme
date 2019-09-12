@@ -23,7 +23,7 @@
   ;;   Nat          natural number (including zero) (Scheme Fixnum or exact Integer)
   ;;   Perm         Fixnum 0-1000 interpreted as a permanence value 0.0-1.0
   ;;   Synapse      Fixnum combining index of input/presynaptic cell and Perm value
-  ;;   Synapses     vector of Synapse; 32-bit elements; sorted for finding pre cell indices
+  ;;   Synapses     vector of Synapse; 32-bit elements
   ;;   Segment      record with Synapses plus management fields
   ;;   Connections  vector of Segment(s) indexed by cell number in Layer
   ;;   Layer        record with algorithm parameters and Connections of layer cells 
@@ -31,6 +31,8 @@
   ;;   Patch        multiple Macrocolumns with lateral connections
   ;;
   ;; Perm and Synapse types are intended to minimize space required for synapses.
+  ;; Segments are sorted for finding pre cell indices; elements of "pre-index" vectors
+  ;; (indexed by pre-cell/input) are lists of segments containing the synapse.
   ;;
   ;; Algorithms have been translated from numenta /htmresearch/... and /nupic/...
   ;; using corresponding functions, names, and organization (not idiomatic Scheme).

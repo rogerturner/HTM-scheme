@@ -125,6 +125,8 @@ creating a cleaner implementation." [Numenta description]
     (number-of-proximal-segments     test:number-of-proximal-segments)
     (number-of-distal-synapses       test:number-of-distal-synapses)
     (number-of-distal-segments       test:number-of-distal-segments)
+    (number-of-lateral-synapses      test:number-of-lateral-synapses)
+    (number-of-lateral-segments      test:number-of-lateral-segments)
     (cp-min-sdr-size                 test:cp-min-sdr-size)
     (cp-max-sdr-size                 test:cp-max-sdr-size)
     (cp-proximal-permanences         test:cp-proximal-permanences)))
@@ -411,7 +413,6 @@ creating a cleaner implementation." [Numenta description]
     (cp-proximal-permanences cp)))
                                                                                             ;
 (define (number-of-distal-synapses cp)   ;; CP -> Nat
-  ;; produce total count of synapses for cells
   (vector-fold-left (lambda (total seg)
       (fx+ total (synapses-length seg)))
     0
@@ -421,6 +422,25 @@ creating a cleaner implementation." [Numenta description]
   (vector-count (lambda (seg)
       (fxpositive? (synapses-length seg)))
     (cp-internal-distal-permanences cp)))
+                                                                                            ;
+(define (number-of-lateral-synapses cp)   ;; CP -> Nat
+  (fold-left (lambda (total col)
+      (+ total
+        (vector-fold-left (lambda (total seg)
+            (fx+ total (synapses-length seg)))
+          0
+          col)))
+    0
+    (cp-distal-permanences cp)))
+                                                                                            ;
+(define (number-of-lateral-segments cp)   ;; CP -> Nat
+  (fold-left (lambda (total col)
+      (+ total
+        (vector-count (lambda (seg)
+            (fxpositive? (synapses-length seg)))
+          col)))
+    0
+    (cp-distal-permanences cp)))
                                                                                             ;
 (define (reset cp)                       ;; CP ->
   ;; when learning this signifies we are to learn a unique new object
