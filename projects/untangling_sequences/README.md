@@ -24,7 +24,7 @@ Example output:
 [1] [Ahmad & Hawkins 2017 Untangling Sequences: Behavior vs. External Causes](http://dx.doi.org/10.1101/190678)
 
 [2] [Izhikevich & Edelman 2008 
-Large-scale model of mammalian thalamocortical systems](http://dx.doi.org/10.1073􏰁/pnas.0712231105)
+Large-scale model of mammalian thalamocortical systems](https://doi.org/10.1073/pnas.0712231105)
 
 ### Abstract (From Numenta draft paper [1])
 
