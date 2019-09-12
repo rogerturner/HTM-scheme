@@ -17,6 +17,8 @@ The project models four excitatory cell types using Numenta
 
 ![cells](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/untangling_sequences/us_layers_and_cells.png)
 
+For each cortical column, each of the 4 cell populations is a separate instance of an algorithm (ATTMs for L4 cells, CPs for L2/3), with the relative weights of connections derived from [2] figure 9.
+
 Example output:
 
 ![figure6](https://raw.githubusercontent.com/rogerturner/HTM-scheme/master/projects/untangling_sequences/Figure%206/19x100%20it%20rsl.png)
