@@ -69,11 +69,11 @@ and Figure 9 in their Supporting Information)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))
                                                                                             ;
-(define-enumeration l4-populations (ss4L4 ss4L23 p4) l4-pop)
+(define-enumeration l4-populations (ss4l4 ss4l23 p4) l4-pop)
                                                                                             ;
 (define-record-type l4 (fields           ;; L4
-  ss4L4                                  ;; ATTM ss4, axon -> L4
-  ss4L23                                 ;; ATTM ss4, axon -> L2/3
+  ss4l4                                  ;; ATTM ss4, axon -> L4
+  ss4l23                                 ;; ATTM ss4, axon -> L2/3
   p4                                     ;; ATTM p4
   offset-stride)                         ;; Nat
   (protocol
@@ -107,52 +107,52 @@ and Figure 9 in their Supporting Information)
     (if (fx=? n 1)  inputs
       (let ((v (list->vector inputs)))
         (sort! fx<? (vector->list (vector-sample v (int<- (/ (vector-length v) n))))))))
-  (let* ( (ss4L4->        (attm:get-active-cells (l4-ss4L4 l)))
-          (ss4L23->       (attm:get-active-cells (l4-ss4L23 l)))
+  (let* ( (ss4l4->        (attm:get-active-cells (l4-ss4l4 l)))
+          (ss4l23->       (attm:get-active-cells (l4-ss4l23 l)))
           (p4->           (attm:get-active-cells (l4-p4 l)))
           (->l4-basal     (append (offset location              0)
                                   (offset (thin apical-input 6) 1)
-                                  (offset (thin ss4L4->      1) 2)
-                                  (offset (thin ss4L23->     3) 3)
+                                  (offset (thin ss4l4->      1) 2)
+                                  (offset (thin ss4l23->     3) 3)
                                   (offset (thin p4->         3) 4)))
-          (->ss4L4-basal  (append (offset location               0)
+          (->ss4l4-basal  (append (offset location               0)
                                   (offset (thin apical-input 12) 1)
-                                  (offset (thin ss4L4->       1) 2)
-                                  (offset (thin ss4L23->      3) 3)
+                                  (offset (thin ss4l4->       1) 2)
+                                  (offset (thin ss4l23->      3) 3)
                                   (offset (thin p4->          3) 4)))
           (->p4-apical    (append (offset apical-input      1)
-                                  (offset (thin ss4L23-> 8) 3)
+                                  (offset (thin ss4l23-> 8) 3)
                                   (offset (thin p4->     8) 4))))
-    (attm:depolarize-cells (l4-ss4L4  l) ->ss4L4-basal '()         learn)
-    (attm:depolarize-cells (l4-ss4L23 l) ->l4-basal    '()         learn)
+    (attm:depolarize-cells (l4-ss4l4  l) ->ss4l4-basal '()         learn)
+    (attm:depolarize-cells (l4-ss4l23 l) ->l4-basal    '()         learn)
     (attm:depolarize-cells (l4-p4     l) ->l4-basal    ->p4-apical learn)
     (let* (
-        (ss4L4-predicted-cells  (attm:get-predicted-cells (l4-ss4L4 l)))
-        (ss4L4-predicted-cols   (attm:cols-from-cells (l4-ss4L4 l) ss4L4-predicted-cells))
-        (ss4L23-predicted-cells (attm:get-predicted-cells (l4-ss4L23 l)))
-        (ss4L23-predicted-cols  (attm:cols-from-cells (l4-ss4L23 l) ss4L23-predicted-cells))
+        (ss4l4-predicted-cells  (attm:get-predicted-cells (l4-ss4l4 l)))
+        (ss4l4-predicted-cols   (attm:cols-from-cells (l4-ss4l4 l) ss4l4-predicted-cells))
+        (ss4l23-predicted-cells (attm:get-predicted-cells (l4-ss4l23 l)))
+        (ss4l23-predicted-cols  (attm:cols-from-cells (l4-ss4l23 l) ss4l23-predicted-cells))
         (p4-predicted-cells     (attm:get-predicted-cells (l4-p4 l)))
         (p4-predicted-cols      (attm:cols-from-cells (l4-p4 l) p4-predicted-cells))
         (bursting-columns       (setdiff1d feature
-                                    (union1d ss4L4-predicted-cols 
-                                      (union1d ss4L23-predicted-cols p4-predicted-cols)))))
-      (attm:activate-cells (l4-ss4L4 l)
+                                    (union1d ss4l4-predicted-cols 
+                                      (union1d ss4l23-predicted-cols p4-predicted-cols)))))
+      (attm:activate-cells (l4-ss4l4 l)
         feature                          ;; feedforward-input
-        ->ss4L4-basal                    ;; basal-reinforce-candidates
+        ->ss4l4-basal                    ;; basal-reinforce-candidates
         '()                              ;; apical-reinforce-candidates
         (append (if (zero? (random 4))   ;; basal-growth-candidates
                     (thin location 3)    ;; (full location input doesn't work here?)
                     (thin location 4)) 
-                (offset (attm:get-winner-cells (l4-ss4L4 l)) 2))
+                (offset (attm:get-winner-cells (l4-ss4l4 l)) 2))
         '()                              ;; apical-growth-candidates
         learn 
         bursting-columns)
-      (attm:activate-cells (l4-ss4L23 l)
+      (attm:activate-cells (l4-ss4l23 l)
         feature                          ;; feedforward-input
         ->l4-basal                       ;; basal-reinforce-candidates
         '()                              ;; apical-reinforce-candidates
         (append location                 ;; basal-growth-candidates
-                (offset (attm:get-winner-cells (l4-ss4L23 l)) 3))
+                (offset (attm:get-winner-cells (l4-ss4l23 l)) 3))
         '()                              ;; apical-growth-candidates
         learn 
         bursting-columns)
@@ -167,24 +167,24 @@ and Figure 9 in their Supporting Information)
         bursting-columns)
       (values
         (append
-          (offset (attm:get-active-cells (l4-ss4L23 l)) 0)
+          (offset (attm:get-active-cells (l4-ss4l23 l)) 0)
           (offset (attm:get-active-cells (l4-p4 l)) 1))
-        (append (offset ss4L23-predicted-cells 0) (offset p4-predicted-cells 1))
+        (append (offset ss4l23-predicted-cells 0) (offset p4-predicted-cells 1))
         bursting-columns))))
                                                                                               ;
 (define (reset l)                        ;; L4 ->
-  (attm:reset (l4-ss4L4 l))
-  (attm:reset (l4-ss4L23 l))
+  (attm:reset (l4-ss4l4 l))
+  (attm:reset (l4-ss4l23 l))
   (attm:reset (l4-p4 l)))
                                                                                             ;
 (define (reset-seq l)                    ;; L4->
-  (attm:reset (l4-ss4L4 l)))
+  (attm:reset (l4-ss4l4 l)))
                                                                                             ;
 (define (get f l pop)                    ;; (ATTM -> X) L4 L4Pop -> X
   ;; access f cells of sub-population pop of layer
   (cond
-    [ (enum-set-member? 'ss4L4 pop)  (f (l4-ss4L4  l)) ]
-    [ (enum-set-member? 'ss4L23 pop) (f (l4-ss4L23 l)) ]
+    [ (enum-set-member? 'ss4l4 pop)  (f (l4-ss4l4  l)) ]
+    [ (enum-set-member? 'ss4l23 pop) (f (l4-ss4l23 l)) ]
     [ (enum-set-member? 'p4 pop)     (f (l4-p4     l)) ] ))
                                                                                             ;
 (define (get-active-cells l pop)         ;; L4 L4Pop -> {CellX}

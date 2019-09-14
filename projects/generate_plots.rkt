@@ -55,25 +55,25 @@
 
 (define render
   (case-lambda
-    [(dp4 pp4 dss4L4 pss4L4) (render dp4 pp4 dss4L4 pss4L4 '() '()) ]
-    [(dp4 pp4 dss4L4 pss4L4 dss4L23 pss4L23)
+    [(dp4 pp4 dss4l4 pss4l4) (render dp4 pp4 dss4l4 pss4l4 '() '()) ]
+    [(dp4 pp4 dss4l4 pss4l4 dss4l23 pss4l23)
      (append
       (list
        (plus-lines (offset dp4 pp4 1) #:color 'RoyalBlue #:alpha 0.5
                    '(#:label #:style) '("Depolarized sensorimotor (p4)" short-dash))
-       (plus-lines (offset pp4 pss4L23 1) #:color 'RoyalBlue
+       (plus-lines (offset pp4 pss4l23 1) #:color 'RoyalBlue
                    '(#:label) '("Correctly predicted sensorimotor (p4)"))
-       (if (pair? dss4L23)
+       (if (pair? dss4l23)
            (list
-            (plus-lines (offset dss4L23 pss4L23 1) #:color 'Red #:alpha 0.5
-                        '(#:label #:style) '("Depolarized sensorimotor (ss4L23)" short-dash))
-            (plus-lines (offset pss4L23 pp4 (- 1)) #:color 'Red
-                        '(#:label) '("Correctly predicted sensorimotor (ss4L23)")))
+            (plus-lines (offset dss4l23 pss4l23 1) #:color 'Red #:alpha 0.5
+                        '(#:label #:style) '("Depolarized sensorimotor ss4(L2/3)" short-dash))
+            (plus-lines (offset pss4l23 pp4 (- 1)) #:color 'Red
+                        '(#:label) '("Correctly predicted sensorimotor ss4(L2/3)")))
            '())
-       (plus-lines (offset dss4L4 pss4L4 1) #:color 'MediumSeaGreen #:alpha 0.5
-                   '(#:label #:style) '("Depolarized sequence (ss4L4)" short-dash))
-       (plus-lines (offset pss4L4 dss4L4 (- 1)) #:color 'MediumSeaGreen
-                   '(#:label) '("Correctly predicted sequence (ss4L4)")))) ]))
+       (plus-lines (offset dss4l4 pss4l4 1) #:color 'MediumSeaGreen #:alpha 0.5
+                   '(#:label #:style) '("Depolarized sequence ss4(L4)" short-dash))
+       (plus-lines (offset pss4l4 dss4l4 (- 1)) #:color 'MediumSeaGreen
+                   '(#:label) '("Correctly predicted sequence ss4(L4)")))) ]))
 
 (define render6
   (case-lambda
@@ -82,12 +82,12 @@
      (append
       (if (pair? ptx)
           (list (lines (offset ptx psm (- 0.5)) #:color 'DarkOrange
-                       #:label "Predicted active sensorimotor (ss4L23) cells"))
+                       #:label "Predicted active sensorimotor ss4(L2/3) cells"))
           '())
       (list (lines (offset psm ptx 0.5) #:color 'Red
-                   #:label "Predicted active sensorimotor (p4) cells"))
+                   #:label "Predicted active sensorimotor p4 cells"))
       (list (lines pts #:color 'RoyalBlue
-                   #:label "Predicted active temporal seq (ss4L4) cells"))) ]))
+                   #:label "Predicted active temporal seq ss4(L4) cells"))) ]))
 
 (define (renderH3 rs ys xs)
   (let* ((final   (for/list ([y ys] [x xs] #:when   (>= x 8)) y))
@@ -118,18 +118,18 @@
       (if entry (if (not (null? (cadr entry))) (cadr entry) #f) #f)))
   (let ( (figure (value-for "figure"))
          (using  (value-for "using"))
-         (L2r    (value-for "L2r"))
-         (L2r1   (value-for "L2r1"))
-         (L2r2   (value-for "L2r2"))
-         (L2a    (value-for "L2a"))
-         (L2ac   (value-for "L2ac"))
-         (L2a1   (value-for "L2a1"))
-         (L2a1c  (value-for "L2a1c"))
-         (L2a2   (value-for "L2a2"))
-         (L2a2c  (value-for "L2a2c"))
-         (L4lnp  (value-for "L4lnp"))
-         (L4pa   (value-for "L4pa"))
-         (L4lpa  (value-for "L4lpa"))
+         (l2r    (value-for "l2r"))
+         (l2r1   (value-for "l2r1"))
+         (l2r2   (value-for "l2r2"))
+         (l2a    (value-for "l2a"))
+         (l2ac   (value-for "l2ac"))
+         (l2a1   (value-for "l2a1"))
+         (l2a1c  (value-for "l2a1c"))
+         (l2a2   (value-for "l2a2"))
+         (l2a2c  (value-for "l2a2c"))
+         (l4lnp  (value-for "l4lnp"))
+         (l4pa   (value-for "l4pa"))
+         (l4lpa  (value-for "l4lpa"))
          (TMlnp  (value-for "TMlnp"))
          (TMpa   (value-for "TMpa"))
          (TMlpa  (value-for "TMlpa"))
@@ -150,8 +150,8 @@
        (case figure
          [("f4a")
           (let ((ys (if TXlnp
-                        (list L4lnp L4pa TMlnp TMpa TXlnp TXpa)
-                        (list L4lnp L4pa TMlnp TMpa))))
+                        (list l4lnp l4pa TMlnp TMpa TXlnp TXpa)
+                        (list l4lnp l4pa TMlnp TMpa))))
             (parameterize ([plot-y-ticks (linear-ticks #:number 6 #:divisors '(5))]
                            [x-max 9.5] [y-max (clear-legend ys)])
               (plot
@@ -161,8 +161,8 @@
                (apply render (with-x-coords ys)))))]
          [("f5a")
           (let ((ys (if TXlnp
-                        (list L4lnp L4pa TMlnp TMpa TXlnp TXpa)
-                        (list L4lnp L4pa TMlnp TMpa))))
+                        (list l4lnp l4pa TMlnp TMpa TXlnp TXpa)
+                        (list l4lnp l4pa TMlnp TMpa))))
             (parameterize ([plot-y-ticks (linear-ticks #:number 6 #:divisors '(5))]
                            [x-max 9.5] [y-max (clear-legend ys)])
               (plot 
@@ -172,8 +172,8 @@
                (apply render (with-x-coords ys)))))]
          [("f6")
           (let* ((ys (if TXlpa
-                         (list L4lpa TMlpa TXlpa)
-                         (list L4lpa TMlpa)))
+                         (list l4lpa TMlpa TXlpa)
+                         (list l4lpa TMlpa)))
                  (so-y (apply max (apply append ys)))
                  (so-y (+ so-y (/ so-y 20))))
             (parameterize
@@ -214,19 +214,19 @@
                         #:title "   Column 1"
                         #:x-min 0 #:x-max 15.3 #:x-label (if one-col "Number of sensations" "")
                         #:y-min -20 #:y-max 4116 #:y-label "Neuron #"
-                        (renderH3 L2r L2a L2ac)))
+                        (renderH3 l2r l2a l2ac)))
               (unless one-col
                 (parameterize ([plot-y-axis? #f] [plot-width 150])
                   (display (plot
                             #:title "   Column 2"
                             #:x-min 0 #:x-max 15.3 #:x-label "Number of sensations"
                             #:y-min -20 #:y-max 4116 #:y-label #f
-                            (renderH3 L2r1 L2a1 L2a1c)))
+                            (renderH3 l2r1 l2a1 l2a1c)))
                   (display (plot
                             #:title "   Column 3"
                             #:x-min 0 #:x-max 15.3 #:x-label ""
                             #:y-min -20 #:y-max 4116 #:y-label #f
-                            (renderH3 L2r2 L2a2 L2a2c)))))
+                            (renderH3 l2r2 l2a2 l2a2c)))))
               (newline)
               (for-each
                (lambda (ac r)
@@ -238,8 +238,8 @@
                       (filter (lambda (x) (> x n)) ac)))
                    (range 20)))
                  (newline))
-               (if one-col (list L2ac) (list L2ac L2a1c L2a2c))
-               (if one-col (list L2r) (list L2r L2r1 L2r2)))
+               (if one-col (list l2ac) (list l2ac l2a1c l2a2c))
+               (if one-col (list l2r) (list l2r l2r1 l2r2)))
               " "))]
          ))
       (for-each display `("\n" ,figure ": "))

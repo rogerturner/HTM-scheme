@@ -30,7 +30,7 @@
           (except (chezscheme) add1 make-list random reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
-  (prefix (HTM-scheme HTM-scheme algorithms L2_L4_patch)  l2l4:))
+  (prefix (HTM-scheme HTM-scheme algorithms l2_l4_patch)  l2l4:))
 
 ;; === Types (see htm_concept.ss) ===
 ;; SDR            = Listof Nat
@@ -76,7 +76,7 @@
 ;; setup network: override algorithm default parameters (scaled to values above)
     (l2-sample-size-proximal      (* 2 num-input-bits))
     (l2-sample-size-distal        (* 5 num-input-bits))
-    (L2-overrides  (get 'L2-overrides `(
+    (l2-overrides  (get 'l2-overrides `(
       [initial-proximal-permanence    . ,initial-permanence]
       [connected-permanence-proximal  . ,connected-permanence]
       [initial-distal-permanence      . ,initial-permanence]
@@ -88,7 +88,7 @@
       [activation-threshold-distal    . ,(int<- (* 0.8 l2-sample-size-distal))]
       [sdr-size                       . ,(* 5 num-input-bits)]
       [online-learning                . ,online-learning])))
-    (L4-overrides  (get 'L4-overrides `(
+    (l4-overrides  (get 'l4-overrides `(
       [initial-permanence                 . ,initial-permanence]
       [connected-permanence               . ,connected-permanence]
       [permanence-increment               . ,permanence-increment]
@@ -101,7 +101,7 @@
     (external-input-size (int<- (* 1.5 num-minicolumns num-cells-per-l4pop)))
     (patch 
       (l2l4:make-patch num-cortical-columns num-minicolumns num-cells-per-l4pop num-input-bits
-        external-input-size L2-overrides L4-overrides))
+        external-input-size l2-overrides l4-overrides))
                                                                                             ;
 ;; default experiment parameters (overridable)
     (figure                            (get 'figure               'z))
@@ -239,18 +239,18 @@
       (map (lambda (key)
           (cons key
             (case key
-              [(L4lnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop p4))) l2l4:patch-L4s)]
-              [(L4lpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) l2l4:patch-L4s)]
-              [(L4ac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop p4))) (l2l4:patch-L4s patch))]
-              [(L4pa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) (l2l4:patch-L4s patch))]
-              [(TMlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4L4))) l2l4:patch-L4s)]
-              [(TMlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L4))) l2l4:patch-L4s)]
-              [(TMac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4L4))) (l2l4:patch-L4s patch))]
-              [(TMpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L4))) (l2l4:patch-L4s patch))]
-              [(TXlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4L23))) l2l4:patch-L4s)]
-              [(TXlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L23))) l2l4:patch-L4s)]
-              [(TXac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4L23))) (l2l4:patch-L4s patch))]
-              [(TXpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4L23))) (l2l4:patch-L4s patch))]
+              [(l4lnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop p4))) l2l4:patch-l4s)]
+              [(l4lpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) l2l4:patch-l4s)]
+              [(l4ac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop p4))) (l2l4:patch-l4s patch))]
+              [(l4pa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop p4))) (l2l4:patch-l4s patch))]
+              [(TMlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4l4))) l2l4:patch-l4s)]
+              [(TMlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4l4))) l2l4:patch-l4s)]
+              [(TMac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4l4))) (l2l4:patch-l4s patch))]
+              [(TMpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4l4))) (l2l4:patch-l4s patch))]
+              [(TXlnp) (lengths    (lambda (l) (l2l4:get-predicted-cells        l (l2l4:l4-pop ss4l23))) l2l4:patch-l4s)]
+              [(TXlpa) (lengths    (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4l23))) l2l4:patch-l4s)]
+              [(TXac)  (vector-map (lambda (l) (l2l4:get-active-cells           l (l2l4:l4-pop ss4l23))) (l2l4:patch-l4s patch))]
+              [(TXpa)  (vector-map (lambda (l) (l2l4:get-predicted-active-cells l (l2l4:l4-pop ss4l23))) (l2l4:patch-l4s patch))]
               )))
         keys))
                                                                                             ;
@@ -363,7 +363,7 @@
           [list "using"  run-args]
           (map (lambda (key)             ;; each stats key (Symbol -> )
             (let ((k2  (substring (symbol->string key) 0 2)))
-              (if (or (string=? k2 "L4") (string=? k2 "TM") (string=? k2 "TX"))
+              (if (or (string=? k2 "l4") (string=? k2 "TM") (string=? k2 "TX"))
                 [cons (symbol->string key)
                 ;; stats is (ExpVectorOf (SensVectorOf (KeyListOf (CCVectorOf Number))))
                 [list (vector->list (vector-map mean   ;; average of exps (for 4a/5a)
@@ -385,10 +385,10 @@
                                   ac)))
                             (if stats-for-key
                               (case key
-                                [(L4pa)  (add-overlap-with 'L4ac)]
+                                [(l4pa)  (add-overlap-with 'l4ac)]
                                 [(TMpa)  (add-overlap-with 'TMac)]
                                 [(TXpa)  (add-overlap-with 'TXac)]
-                                [(TMlnp TMlpa TXlnp TXlpa L4lnp L4lpa)
+                                [(TMlnp TMlpa TXlnp TXlpa l4lnp l4lpa)
                                   (+ ac (vector-average (cdr stats-for-key)))]
                                 [else ac])
                               ac)))
@@ -406,19 +406,19 @@
                 (vector-fold-left (lambda (sum layer)
                     (+ sum (f layer)))
                   0
-                  (l2l4:patch-L2s patch))))
+                  (l2l4:patch-l2s patch))))
               (sum-l4 (lambda (f pop)
                 (vector-fold-left (lambda (sum layer)
                     (+ sum (f layer pop)))
                   0
-                  (l2l4:patch-L4s patch)))))
+                  (l2l4:patch-l4s patch)))))
           (for-each display `(
               ,(symbol->string figure) " " ,@run-args #\newline
               ,(div tenths 10) "." ,(mod tenths 10) "s thread time\n"
-              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4L4 )) "/"
-              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4L4 )) " ss4L4 synapses\n"
-              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4L23)) "/"
-              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4L23)) " ss4L23 synapses\n"
+              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4l4 )) "/"
+              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4l4 )) " ss4L4 synapses\n"
+              ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop ss4l23)) "/"
+              ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop ss4l23)) " ss4L23 synapses\n"
               ,(sum-l4 l2l4:number-of-basal-synapses (l2l4:l4-pop p4    )) "/"
               ,(sum-l4 l2l4:number-of-basal-segments (l2l4:l4-pop p4    )) " p4 basal synapses\n"
               ,(sum-l4 l2l4:number-of-apical-synapses (l2l4:l4-pop p4   )) "/"
@@ -439,8 +439,8 @@
     [num-features   .   10]
     [num-locations  .  100]
     [num-repetitions .   20]
-    [train-keys     . (L4ac TMac TXac)]
-    [test-keys      . (L4lnp L4pa TMlnp TMpa TXlnp TXpa)]))
+    [train-keys     . (l4ac TMac TXac)]
+    [test-keys      . (l4lnp l4pa TMlnp TMpa TXlnp TXpa)]))
                                                                                             ;
 (define exp5a '(
     [figure         .  f5a]
@@ -448,8 +448,8 @@
     [num-sequences  .    0]
     [num-features   .  100]
     [num-locations  .  100]
-    [train-keys     . (L4ac TMac TXac)]
-    [test-keys      . (L4lnp L4pa TMlnp TMpa TXlnp TXpa)]))
+    [train-keys     . (l4ac TMac TXac)]
+    [test-keys      . (l4lnp l4pa TMlnp TMpa TXlnp TXpa)]))
                                                                                             ;
 (define exp6 '(
     [figure          .  f6]
@@ -458,8 +458,8 @@
     [num-features    .  50]
     [num-locations   . 100]
     [num-repetitions .  30]
-    ;[train-keys      . (L4ac TMac TXac)]
-    [test-keys       . (L4lpa TMlpa TXlpa)]))
+    ;[train-keys      . (l4ac TMac TXac)]
+    [test-keys       . (l4lpa TMlpa TXlpa)]))
                                                                                             ;
 (define run                              ;; String [ {KWarg} ] ->
   ;; can be used in repl eg (run "4a" '( [column-count . 150] ) )

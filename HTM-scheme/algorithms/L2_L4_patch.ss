@@ -47,12 +47,12 @@ L2L4 cortical column:
 
     |#
   
-(library (HTM-scheme HTM-scheme algorithms L2_L4_patch)
+(library (HTM-scheme HTM-scheme algorithms l2_l4_patch)
                                                                                             ;
 (export
   make-patch
-  patch-L2s
-  patch-L4s
+  patch-l2s
+  patch-l4s
   compute
   reset
   reset-seq
@@ -81,19 +81,19 @@ L2L4 cortical column:
   (prefix (HTM-scheme HTM-scheme algorithms column_pooler) l2:))
                                                                                             ;                                                                                            ;
 (define-record-type patch (fields        ;; Patch
-  L2s                                    ;; CColVecOf CP
-  L4s)                                   ;; CColVecOf L4
+  l2s                                    ;; CColVecOf CP
+  l4s)                                   ;; CColVecOf L4
   (protocol
     (lambda (new)
       (lambda (ncc cc ncl4pop nib bis cp-overrides attm-overrides)
         (let* (
             (l2-cell-count (int<- (* 3 cc ncl4pop)))
-            (L2s (build-vector ncc (lambda _ 
+            (l2s (build-vector ncc (lambda _ 
                     (l2:make-cp (append `([cell-count . ,l2-cell-count]) cp-overrides)))))
-            (ais (l2:number-of-cells (vector-ref L2s 0)))
-            (L4s (build-vector ncc (lambda _ 
+            (ais (l2:number-of-cells (vector-ref l2s 0)))
+            (l4s (build-vector ncc (lambda _ 
                     (l4:make-l4 cc ncl4pop nib bis ais attm-overrides)))))
-          (new L2s L4s))))))
+          (new l2s l4s))))))
                                                                                             ;
 (define adjacent-ccs (vector
   '( 1  2  3  4  5  6)
@@ -142,11 +142,11 @@ L2L4 cortical column:
                                                                                             ;
 (define (compute patch features locations learn)
   ;; run one timestep of patch
-  (let ((L2-prev-actives
+  (let ((l2-prev-actives
           (vector-map (lambda (l2)
               (append                    ;; copy *elements* for next step
                 (l2:get-active-cells l2) '()))
-            (patch-L2s patch))))
+            (patch-l2s patch))))
     (threaded-vector-for-each              ;; thread per cortical column
       (lambda (l2 l4 feature location ccx)
         (let-values ([(l4-active-cells l4-predicted-cells bursting-columns)
@@ -158,17 +158,17 @@ L2L4 cortical column:
           (when (null? bursting-columns)
             (l2:compute l2
               l4-active-cells              ;; feedforward input
-              (lateral-inputs ccx (patch-L2s patch) L2-prev-actives)
+              (lateral-inputs ccx (patch-l2s patch) l2-prev-actives)
               l4-predicted-cells           ;; feedforward growth candidates
               learn
               l4-predicted-cells))))       ;; predicted input
-      (patch-L2s patch) (patch-L4s patch) features locations (indexes features))))
+      (patch-l2s patch) (patch-l4s patch) features locations (indexes features))))
                                                                                             ;
 (define (reset patch)
-  (vector-for-each  l2:reset  (patch-L2s patch))
-  (vector-for-each  l4:reset  (patch-L4s patch)))
+  (vector-for-each  l2:reset  (patch-l2s patch))
+  (vector-for-each  l4:reset  (patch-l4s patch)))
     
 (define (reset-seq patch)
-  (vector-for-each  l4:reset-seq  (patch-L4s patch)))
+  (vector-for-each  l4:reset-seq  (patch-l4s patch)))
                                                                                             ;
 )
