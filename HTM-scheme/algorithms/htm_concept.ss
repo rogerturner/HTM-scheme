@@ -64,12 +64,14 @@
   syn-prex
   syn-perm
   build-synapses
+  synapses-count
   synapses-search
   make-seg
   seg-cellx
   seg-flatx
   seg-synapses
   seg-synapses-set!
+  expect
   )
                                                                                             ;
 (import 
@@ -99,47 +101,47 @@
   (make-bytevector (fx* n 4)))
                                                                                             ;
 (define (synapses-ref v n)
-  (bytevector-s32-native-ref v (fx* n 4)))
+  (bytevector-u32-native-ref v (fx* n 4)))
                                                                                             ;
-(define (synapses-set! v n s32)
-  (bytevector-s32-native-set! v (fx* n 4) s32))
+(define (synapses-set! v n u32)
+  (bytevector-u32-native-set! v (fx* n 4) u32))
                                                                                             ;
 (define (synapses-length v)
   (fxdiv (bytevector-length v) 4))
                                                                                             ;
 (define (synapses->list v)
-  (bytevector->sint-list v native 4))
+  (bytevector->uint-list v native 4))
                                                                                             ;
 (define (list->synapses l)
-  (sint-list->bytevector l native 4))
+  (uint-list->bytevector l native 4))
                                                                                             ;
 (define prex-offset                      ;; -> Fixnum
   ;; don't offset synapse values
   0)
                                                                                             ;
 #|
-(define-syntax make-synapses             ;; Nat [Fixnum] -> Synapses
-  (identifier-syntax make-fxvector))     ;; (change fxvector to vector for R6RS)
-                                                                                            ;
-(define-syntax synapses-ref              ;; Synapses Nat -> Synapse
-  (identifier-syntax fxvector-ref))
-                                                                                            ;
-(define-syntax synapses-set!             ;; Synapses Nat Synapse ->
-  (identifier-syntax fxvector-set!))
-                                                                                            ;
-(define-syntax synapses-length           ;; Synapses -> Nat
-  (identifier-syntax fxvector-length))
-                                                                                            ;
-(define-syntax synapses->list            ;; Synapses -> Nat
-  (identifier-syntax fxvector->list))
-                                                                                            ;
-(define-syntax list->synapses            ;; Synapses -> Nat
-  (identifier-syntax list->fxvector))
-                                                                                            ;
-(define prex-offset                      ;; -> Fixnum
-  ;; offset synapse values to maximize available pre-cell index
-  (add1 (fxdiv (least-fixnum) prex-shift)))
-|#
+  (define-syntax make-synapses             ;; Nat [Fixnum] -> Synapses
+    (identifier-syntax make-fxvector))     ;; (change fxvector to vector for R6RS)
+                                                                                              ;
+  (define-syntax synapses-ref              ;; Synapses Nat -> Synapse
+    (identifier-syntax fxvector-ref))
+                                                                                              ;
+  (define-syntax synapses-set!             ;; Synapses Nat Synapse ->
+    (identifier-syntax fxvector-set!))
+                                                                                              ;
+  (define-syntax synapses-length           ;; Synapses -> Nat
+    (identifier-syntax fxvector-length))
+                                                                                              ;
+  (define-syntax synapses->list            ;; Synapses -> Nat
+    (identifier-syntax fxvector->list))
+                                                                                              ;
+  (define-syntax list->synapses            ;; Synapses -> Nat
+    (identifier-syntax list->fxvector))
+                                                                                              ;
+  (define prex-offset                      ;; -> Fixnum
+    ;; offset synapse values to maximize available pre-cell index
+    (add1 (fxdiv (least-fixnum) prex-shift)))
+  |#
                                                                                             ;
 (define (make-syn prex perm)             ;; PreX Perm -> Synapse
   (fx+ (fx* (fx+ prex prex-offset) prex-shift) perm))
@@ -154,6 +156,14 @@
   (let ((synapses (make-synapses n)))
     (do ((i 0 (add1 i))) ((fx=? i n) synapses)
       (synapses-set! synapses i (proc i)))))
+                                                                                            ;
+(define (synapses-count proc syns)       ;; (Synapse -> Boolean) Synapses -> Nat
+  ;; produce count of syns for which (proc elt) is not false
+  (do ( [sx (fx1- (synapses-length syns)) (fx1- sx)]
+        [count 0 (if (proc (synapses-ref syns sx))
+                     (fx1+ count)
+                     count)])
+      ((fxnegative? sx) count)))
                                                                                             ;
 (define (synapses-search                 ;; Synapses Synapse Synapse -> Synapse|#f
           syns syn-low syn-high)
@@ -173,5 +183,20 @@
     cellx                                ;; Nat: index of cell that this is a segment of
     flatx                                ;; Nat: index of this in the register of segments
     (mutable synapses)))                 ;; (vectorof Synapse)
+
+(define-syntax expect                    ;; ((X ... -> Y) X ...) Y -> Error|
+  ;; check that function application(s) to arguments match expected values
+  (lambda (x)                            
+    (syntax-case x ()                    ;; [expect ([fn args] expected ) ... ]
+      [ (_ (expr expected) ...)          ;; expr matches [fn args]
+        #'(begin 
+            (let ((result expr))         ;; eval expr just once, no output if check passes
+              ; (when (equal? result expected) (display "."))
+              (unless (equal? result expected)
+                (for-each display 
+                  `("**" expr #\newline 
+                    "  expected: " ,expected #\newline 
+                    "  returned: " ,result  #\newline))
+                (exit))) ...)])))
 
 )

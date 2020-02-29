@@ -64,6 +64,8 @@
   exclude-by-mask
   thread-limit!
   threaded-vector-for-each
+  cost-center-1
+  cost-center-2
   define-memoized)
                                                                                             ;
 (import
@@ -73,9 +75,11 @@
 ;; Boolean, Number, Integer, Fixnum, (Listof X), (Vectorof X) ... = Scheme types
 ;; X, Y, Z  = type parameters (arbitrary types in function type specification etc)
 ;; X Y -> Z = function with argument types X, Y and result type Z; [X] = optional X
+;; {X}      = abbreviation for (Listof X)
 ;; Nat      = natural number (including zero) (Scheme Fixnum or exact Integer)
 ;; Fixnum3  = Fixnum interpreted as number with 3 decimal places, ie 1000 = 1.0
 ;; Bits     = Integer (Bignum) interpreted bitwise
+;; KWarg    = Pair (key . value)
 
 (define (add1 n)                         ;; Fixnum -> Fixnum
   (fx+ 1 n))
@@ -151,7 +155,7 @@
 (define (build-vector n f)               ;; Nat (Nat -> X) -> (vectorof X)
   ;; produce vector length n by applying f to indices
   (let ((v (make-vector n)))
-    (do ((i 0 (add1 i))) ((fx=? i n) v)
+    (do ((i 0 (fx1+ i))) ((fx=? i n) v)
       (vector-set! v i (f i)))))
                                                                                             ;
 (define (vector-filter pred vec)         ;; (X -> Boolean) (vectorof X) -> (vectorof X)
@@ -272,19 +276,23 @@
 (define (random-seed! n)                 ;; Nat ->
   (set! random-state n))
                                                                                             ;
-(define (random n)                       ;; Nat -> Nat
-  ;; produce random integer in range 0..n-1
+(define (random n)                       ;; Fixnum|Flonum -> Fixnum|Flonum
+  ;; produce random Fixnum in range 0..n-1, or Flonum in range [0..n>
+  ;; *** (fixnum-width) > 48 only ***
   ;; alternative?: (set! random-state (mod (+ 1013904223 (* random-state 1664525)) 4294967296))
   (let ((Lehmer-modulus   2147483647)
         (Lehmer-multiplier     48271))
-    (set! random-state (mod (* random-state Lehmer-multiplier) Lehmer-modulus))
-    (mod random-state n)))
+    (set! random-state (fxmod (fx* random-state Lehmer-multiplier) Lehmer-modulus))
+    (if (fixnum? n)
+      (fxmod random-state n)
+      (fl* n (fl/ (fixnum->flonum random-state) 2147483647.0)))))
                                                                                             ;
 (define (vector-sample source size)      ;; (vectorof X) Nat -> (vectorof X)
   ;; produce random selection of length size from source (using Durstenfeld shuffle)
   (let* ( (source-length (vector-length source))
+          (size    (fxmin size source-length))
           (shuffle (if (fx<? size source-length) size (fx- size 1))))
-    (cond [(fxzero? size) '#()]
+    (cond [(or (fxzero? size) (fxzero? source-length)) '#()]
           [(fx=? size 1)
            (vector (vector-ref source (random source-length)))]
           [else
@@ -305,28 +313,29 @@
           [ (fx<? target element) (search left (fx- mid 1)) ]
           [else element])))))
                                                                                             ;
-(define (key-word-args args defaults)    ;; (listof KWarg) (listof KWarg) -> (listof X)
-  ;; KWarg is [key . value]; produce list of default values overridden by arg values
+(define (key-word-args args defaults)    ;; {KWarg} {KWarg} -> {X}
+  ;; produce values from defaults overridden by args values with matching key
   (map (lambda (default-kv)
-         (let ((kv (assq (car default-kv) args)))  ;; if this default in args
-           (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
-       defaults))
+      (let ((kv (assq (car default-kv) args)))  ;; if this default in args
+        (if kv (cdr kv) (cdr default-kv))))     ;; then use given val
+    defaults))
                                                                                             ;
 (define (do-with-progress n f)              ;; Nat (Nat -> ) ->
   ;; apply f to 0..n-1 with display of iteration time
   (define (secs-since t) 
     (quotient (+ (- (cpu-time) t) 500) 1000))
-  (for-each display `(" starting     " #\return))
+  (display " starting     \r")
   (flush-output-port (current-output-port))
-  (let ((start (cpu-time)))
-    (do ((i 0 (add1 i))) ((= i n))
-      (let ((step-t0 (cpu-time)))
-        (f i)
-        (let ((step-secs (secs-since step-t0)))
-          (when (or (positive? step-secs) (zero? (modulo i 10)))
-            (for-each display
-              `(#\space ,i ": " ,step-secs "  " ,(secs-since start) "    " #\return))
-            (flush-output-port (current-output-port))))))))
+  (let* ( [start-t0 (cpu-time)]
+          [stride   (expt 10 (exact (ceiling (log (max 1 (log (fxmax 1 n)))))))])
+    (do ((step 0 (fx+ step stride))) ((fx>=? step n))
+      (let* ([limit   (fxmin n (fx+ step stride))]
+             [step-t0 (cpu-time)])
+        (do ((i step (fx1+ i))) ((fx=? i limit))
+          (f i))
+        (for-each display
+          `(#\space ,limit ": " ,(secs-since step-t0) "  " ,(secs-since start-t0) "     \r"))
+        (flush-output-port (current-output-port))))))
                                                                                             ;
 (define (intersect1d l1 l2)              ;; {Fixnum} {Fixnum} -> {Fixnum}
   ;; produce intersection of sorted lists of fixnums
@@ -426,6 +435,9 @@
     (with-mutex mutex
       (unless (zero? todo)
         (condition-wait all-done mutex)))))
+                                                                                            ;
+(define cost-center-1 (make-cost-center))
+(define cost-center-2 (make-cost-center))
                                                                                             ;
   ;; List comprehensions from the Programming Praxis standard prelude
   ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)
