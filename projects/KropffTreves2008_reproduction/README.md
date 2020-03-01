@@ -8,7 +8,7 @@ This is a reproduction study of:
 	
 translated from the [NUPIC based reproduction](https://github.com/ctrl-z-9000-times/KropffTreves2008_reproduction) by David McDougall into HTM-scheme.
 
-#### This README is a lightly edited abridgement of https://github.com/ctrl-z-9000-times/KropffTreves2008_reproduction/blob/master/README.md
+#### This README is a lightly edited abridgement of https://github.com/ctrl-z-9000-times/KropffTreves2008_reproduction/blob/master/README.md by David McDougall
 
 ## Introduction
 Kropff & Treves [1] describe a method of producing grid cells.  It appears to be supported by biology [2].  The gist of it is to make a spatial pooler [3] with two new mechanisms: stability and fatigue.  The spatial pooler's overlap is stabilized by putting it through a low pass filter, which smooths over input fluctuations and removes spurious input fluctuations.  Each cell also has a fatigue which slowly follows its activity, catches up to it and turns it off.  The fatigue is equal to the overlap passed through a low pass filter.  
@@ -36,6 +36,7 @@ Compare these results to Kropff & Treves, 2008.
 The model is trained in a 256x256 arena by randomly walking.  The simulated agent moves at a constant speed of 1.4 units per step.  When it reaches one of the arena's boundaries it is turned to face back into the arena.  The model is trained for 200,000 steps, which took 20 minutes.
 
 ![Agent's path through arena, 10k steps](Path_10k.png?raw=true "Path, 10k steps")
+
 **Figure 1:** Example of random walk.  This figure contains only 10,000 steps.
 
 ---
@@ -54,7 +55,7 @@ The model is tested by examining which locations each grid cell activates at (AK
 Notice that the grid cells do not respond to large contiguous areas of the arena.  There are many isolated (non-contiguous) activations.  The small contiguous area are randomly shaped and have fuzzy, ill-defined borders.  
 
 ![Trained Grid Cell Receptive Fields](Grid_Cell_Receptive_Fields_trained.png?raw=true "Trained Grid Cell Receptive Fields")
-**Figure 4:** Receptive fields of the same grid cells that are shown in figure 3, after training.  Notice that the grid cells respond to large contiguous areas.  Many of the receptive fields are approximately round, the same size, and have sharp, well defined borders.  
+**Figure 4:** Receptive fields of grid cells after training (top row: same cells as figure 3, other rows: first 10 columns).  Notice that the grid cells respond to large contiguous areas.  Many of the receptive fields are approximately round, the same size, and have sharp, well defined borders.  
 
 ## References
 [1]	The emergence of grid cells: intelligent design or just adaptation? Emilio Kropff and Alessandro Treves, 2018.  DOI 10.1002/hipo.20520
