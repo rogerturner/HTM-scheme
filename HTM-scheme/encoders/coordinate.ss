@@ -51,7 +51,7 @@
                                                                                             ;
 (import 
   (except (chezscheme) add1 make-list)
-  (except (HTM-scheme HTM-scheme algorithms htm_prelude) random)
+          (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept))
 
 ;; Types

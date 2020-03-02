@@ -167,7 +167,7 @@
                            (map vector
                                 (map real-part course)
                                 (map imag-part course)))
-                    #:width 256 #:height 256))]
+                    #:width 512 #:height 512))]
            [("kt2" "kt3" "kt4")
             (let ((enc-rf (value-for "enc-rf")))
               (plot (points enc-rf #:sym 'dot
@@ -321,7 +321,11 @@
               (plot-experiment (car data))
               (unless (null? (cdr data)) (plot (cdr data))))
             (newline)
-            (display plots)
+            (if (> (length plots) 5) (begin
+                                       (display (car plots))
+                                       (newline)
+                                       (for-each display (cdr plots)))
+                (for-each display plots))
             (newline)
             (sleep 1)
             (sync (filesystem-change-evt f))

@@ -1,5 +1,28 @@
 #!chezscheme
 
+;; === HTM-scheme KropffTreves2008 project Copyright 2020 Roger Turner. ===
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Based on code from "ctrl-z-9000-times/KropffTreves2008_reproduction"  ;;
+  ;; which is (c) 2018 David McDougall; see license there for permissions. ;;
+  ;;                                                                       ;;
+  ;; This program is free software: you can redistribute it and/or modify  ;;
+  ;; it under the terms of the GNU Affero Public License version 3 as      ;;
+  ;; published by the Free Software Foundation.                            ;;
+  ;;                                                                       ;;
+  ;; This program is distributed in the hope that it will be useful,       ;;
+  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of        ;;
+  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                  ;;
+  ;; See the GNU Affero Public License for more details.                   ;;
+  ;;                                                                       ;;
+  ;; You should have received a copy of the GNU Affero Public License      ;;
+  ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  #|
+  
+Extends Spatial Pooler: see
+(https://github.com/ctrl-z-9000-times/KropffTreves2008_reproduction)
+  |#
+
 (library (HTM-scheme projects KropffTreves2008_reproduction grid_cells)
 
 (export
@@ -9,7 +32,7 @@
   
 (import
   (except (chezscheme) add1 make-list reset)
-  (except (HTM-scheme HTM-scheme algorithms htm_prelude) random)
+  (except (HTM-scheme HTM-scheme algorithms htm_prelude) #;random)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms spatial_pooler) sp:))
 
@@ -27,7 +50,7 @@
       (lambda (kwargs)
         (apply (pargs->new kwargs)
                (key-word-args kwargs gc-defaults))))))
-          
+                                                                                            ;
 (define gc-defaults `(
     [b1                  . 0.05]
     [b2                  . ,(/ 0.05 3)]
@@ -42,7 +65,7 @@
   (gc-r-inact-set! gc (make-vector (sp:sp-num-columns gc) 0.0))
   (gc-prev-active-columns-set! gc (list))
   (gc-prev-input-vector-set!   gc 0 ))
-  
+                                                                                            ;
 (define (compute gc input-vector learn)  ;; GC InputVec Boolean -> (listof ColumnX)
   ;; produce active columns from input; optionally update sp if learning
   (sp:sp-iteration-num-set! gc (fx1+ (sp:sp-iteration-num gc)))
@@ -50,14 +73,14 @@
   (let* (
       [overlaps         (sp:calculate-overlap gc input-vector)]  ;; (ColVecOf Overlap)
       [sum-synapses     (sp:sp-connected-counts gc)]             ;; (ColVecOf Nat) set by adapt-synapses
-      [n-overlaps       (vector-map (lambda (ov ss)
+      [overlaps         (vector-map (lambda (ov ss)
                             (if (fxzero? ss)  0.0 
                                 (fl/ ov (fixnum->flonum ss))))
                           overlaps sum-synapses)]
-      [f-overlaps       (_fatigue gc n-overlaps)]
+      [overlaps         (_fatigue gc overlaps)]
       [boosted-overlaps (if learn
-                            (vector-map fl* f-overlaps (sp:sp-boost-factors gc))
-                            n-overlaps)]
+                            (vector-map fl* overlaps (sp:sp-boost-factors gc))
+                            overlaps)]
       [active-columns   (sp:inhibit-columns gc boosted-overlaps)])
 
     (when learn
@@ -69,7 +92,7 @@
           (sp:sp-inhibition-radius-set! gc (sp:update-inhibition-radius gc))
           (sp:update-min-duty-cycles gc)))
     active-columns))
-    
+                                                                                            ;
 (define (_fatigue gc overlaps)           ;; (ColVecOf Number) (ColVecOf OverlapX) -> (ColVecOf OverlapX)
   ;;
   (gc-r-act-set! gc 
@@ -81,7 +104,7 @@
         (fl+ ri (fl* (gc-b2 gc) (fl- ov ri))))
       (gc-r-inact gc) overlaps))
   (gc-r-act gc))
-
+                                                                                            ;
 (define (adapt-synapses                  ;; SP InputVec (listof ColumnX) ->
           gc input-vector active-columns)
   ;; update permanences in segments of active columns (+ if synapse's input on, - if not)
@@ -113,11 +136,7 @@
                       [(fx=? perm max-perm)
                         (unless inp-bit
                           (synapses-set! segment i
-                            (sp:decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold)))]
-                      #;[else (synapses-set! segment i
-                              (if inp-bit
-                                (sp:increase-perm synapse syn-perm-active-inc)
-                                (sp:decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold)))])))))
+                            (sp:decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold)))])))))
             (let loop ((i (fx1- (synapses-length segment))) (num-connected 0))
               (cond 
                 [(fxnegative? i)
@@ -143,5 +162,5 @@
       active-columns))
   (gc-prev-active-columns-set! gc active-columns)
   (gc-prev-input-vector-set!   gc input-vector))
-                                                                              ;
+                                                                                            ;
 )
