@@ -18,12 +18,11 @@
 
   ;; Translated from NuPIC hello_sp.py, see comments there for more info.
 
-(library-directories "../HTM-scheme/algorithms/")
-
-(import 
+(import
   (rnrs)
-  (htm_prelude)
-  (spatial_pooler))
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (HTM-scheme HTM-scheme algorithms htm_concept)
+  (prefix (HTM-scheme HTM-scheme algorithms spatial_pooler) sp:))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))
@@ -47,17 +46,18 @@
 (define (hello-sp) 
   (display "See nupic/examples/sp/hello_sp.py") (newline)
   (letrec* ( 
-    (inp-dims '(32 32))
-    (col-dims '(64 64))
-    (ni   (apply * inp-dims))
-    (sp   (make-sp* inp-dims col-dims '[global-inhibition . #t]
-          `[potential-radius                . ,ni]
-          `[num-active-columns-per-inh-area . ,(int<- (* 0.02 (apply * col-dims)))]
-          `[syn-perm-active-inc             . ,(perm<- 0.01)]
-          `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
+    (ni   (* 32 32))
+    (sp   (sp:make-sp `(
+          [input-dimensions                . (32 32)]
+          [column-dimensions               . (64 64)]
+          [global-inhibition               . #t]
+          [potential-radius                . ,ni]
+          [num-active-columns-per-inh-area . ,(int<- (* 0.02 (* 64 64)))]
+          [syn-perm-active-inc             . ,(perm 0.01)]
+          [syn-perm-inactive-dec           . ,(perm 0.008)])))
     (create-input (lambda () (random-bits ni)))
     (run          (lambda (description input learn prev-cols)
-                    (let* ( (cols  (list-sort < (compute sp input learn)))
+                    (let* ( (cols  (list-sort < (sp:compute sp input learn)))
                             (score (percent-overlap (list->bitwise cols) (list->bitwise prev-cols))))
                       (for-each display `(,description ": " ,(percent->string score) " ("))
                       (for-each (lambda (x) (display x) (display " ")) (take 15 cols)) 

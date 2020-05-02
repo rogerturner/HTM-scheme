@@ -18,12 +18,11 @@
 
   ;; Translated from NuPIC sp_tutorial.py, see comments there for more info.
 
-(library-directories "../HTM-scheme/algorithms/")
-
-(import 
+(import
   (rnrs)
-  (htm_prelude)
-  (spatial_pooler))
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (HTM-scheme HTM-scheme algorithms htm_concept)
+  (prefix (HTM-scheme HTM-scheme algorithms spatial_pooler) sp:))
 
 (define (random-bits size)
   (let ((w (expt 2 32)))
@@ -46,21 +45,24 @@
                                                                                             ;
 (define (sp-tutorial)
   (display "See nupic/examples/sp/sp_tutorial.py") (newline)
+  (random-seed! 42)
   (let* ( 
-      (input-dimensions  '(1024 1))
-      (column-dimensions '(2048 1))
+      (input-dimensions  '(1024))
+      (column-dimensions '(2048))
       (input-size    (apply * input-dimensions))
       (column-number (apply * column-dimensions))
-      (create-input  (lambda (_) (random-bits input-size)))
+      (create-input  (lambda _ (random-bits input-size)))
       (input-array   (create-input 0))
-      (sp   (make-sp* input-dimensions column-dimensions
-            `[potential-radius                . ,(int<- (* 0.5 input-size))]
-            `[num-active-columns-per-inh-area . ,(int<- (* 0.02 column-number))]
-            `[global-inhibition               . #t]
-            `[syn-perm-active-inc             . ,(perm<- 0.01)]
-            `[syn-perm-inactive-dec           . ,(perm<- 0.008)]))
-      (active-cols   (compute sp input-array #f))
-      (all-counts    (vector-map overlap-count (calculate-overlap sp input-array)))
+      (sp (sp:make-sp `(
+              [input-dimensions                . ,input-dimensions]
+              [column-dimensions               . ,column-dimensions]
+              [potential-radius                . ,(int<- (* 0.5 input-size))]
+              [num-active-columns-per-inh-area . ,(int<- (* 0.02 column-number))]
+              [global-inhibition               . #t]
+              [syn-perm-active-inc             . ,(perm 0.01)]
+              [syn-perm-inactive-dec           . ,(perm 0.008)])))
+      (active-cols   (sp:compute sp input-array #f))
+      (all-counts    (sp:calculate-overlap sp input-array))
       (active-counts (vector-refs all-counts (list->vector active-cols)))
       (mean          (lambda (vec) (int<- (vector-average vec))))
       (for-each-noise-level
@@ -77,16 +79,16 @@
     (for-each-noise-level "Figure 2 - noise:overlap linear" (lambda (nl)
       (percent-overlap input-array (corrupt-vector input-array input-size nl))))
     (for-each-noise-level "Figure 3 - without training" (lambda (nl)
-      (percent-overlap (list->bitwise (compute sp input-array #f))
-                       (list->bitwise (compute sp 
+      (percent-overlap (list->bitwise (sp:compute sp input-array #f))
+                       (list->bitwise (sp:compute sp 
                          (corrupt-vector input-array input-size nl) #f)))))
     (let* ( (num-examples 10)
             (input-vectors (build-vector num-examples create-input))
             (epochs 30))
       (do ((epoch 0 (add1 epoch))) ((= epoch epochs))
         (do ((i 0 (add1 i))) ((= i num-examples))
-          (compute sp (vector-ref input-vectors i) #t)))
+          (sp:compute sp (vector-ref input-vectors i) #t)))
       (for-each-noise-level "Figure 4 - with training: sigmoid" (lambda (nl)
-        (percent-overlap (list->bitwise (compute sp (vector-ref input-vectors 0) #f))
-                         (list->bitwise (compute sp 
+        (percent-overlap (list->bitwise (sp:compute sp (vector-ref input-vectors 0) #f))
+                         (list->bitwise (sp:compute sp 
                            (corrupt-vector (vector-ref input-vectors 0) input-size nl) #f))))))))
