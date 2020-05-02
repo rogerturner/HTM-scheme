@@ -30,20 +30,9 @@
   compute
   sp-num-columns
   ;; following exports enable override of compute/adapt-synapses
-  sp-iteration-num
-  sp-iteration-num-set!
-  sp-iteration-learn-num
-  sp-iteration-learn-num-set!
-  calculate-overlap
-  sp-connected-counts
-  inhibit-columns
-  update-duty-cycles
-  bump-up-weak-columns
-  update-boost-factors
-  sp-update-period
-  update-inhibition-radius
-  sp-inhibition-radius-set!
-  update-min-duty-cycles
+  sp-potential-pools
+  connected-inputs
+  sp-connected-synapses
   sp-stimulus-threshold
   raise-permanence-to-threshold
   increase-perm
@@ -52,18 +41,17 @@
   sp-syn-perm-inactive-dec
   sp-syn-perm-active-inc
   sp-syn-perm-trim-threshold
-  sp-boost-factors
-  for-each-segment
+  init-permanence
   )
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list random reset)
-  (HTM-scheme HTM-scheme algorithms htm_prelude)
-  (HTM-scheme HTM-scheme algorithms htm_concept))
+  (except (chezscheme) reset)
+          (HTM-scheme HTM-scheme algorithms htm_prelude)
+          (HTM-scheme HTM-scheme algorithms htm_concept))
     
 ;; -- Spatial Pooler Types --
                                                                                             ;
-;; InputVec     = Number (Bignum), interpreted bitwise as (vectorof Boolean)
+;; InputVec     = Number (Bignum), interpreted bitwise as (Vectorof Boolean)
 ;; InputX       = Nat, index of bit in InputVec
 ;; Overlap      = Flonum (to allow normalisation/fatigue of overlap counts)
 ;; DutyCycle    = Flonum
@@ -80,36 +68,35 @@
                                                                                             ;
 (define-record-type sp                   ;; SP
   (fields
-    input-dimensions                          ;; (listof Nat)
-    column-dimensions                         ;; (listof Nat)
-    (mutable potential-radius)                ;; Nat
-    (mutable potential-pct)                   ;; Number
-    (mutable global-inhibition)               ;; Boolean
-    (mutable num-active-columns-per-inh-area) ;; Nat
-    (mutable local-area-density)              ;; Number
-    (mutable stimulus-threshold)              ;; Nat
+    input-dimensions                          ;; (Listof Nat)
+    column-dimensions                         ;; (Listof Nat)
+    potential-radius                          ;; Nat
+    potential-pct                             ;; Number
+    global-inhibition                         ;; Boolean
+    num-active-columns-per-inh-area           ;; Nat
+    local-area-density                        ;; Number
+    stimulus-threshold                        ;; Nat
     (mutable inhibition-radius)               ;; Nat
-    (mutable duty-cycle-period)               ;; Nat
+    duty-cycle-period                         ;; Nat
     boost-strength                            ;; Number
     wrap-around                               ;; Boolean
     (mutable iteration-num)                   ;; Nat
     (mutable iteration-learn-num)             ;; Nat
-    (mutable update-period)                   ;; Nat
+    update-period                             ;; Nat
     (mutable syn-perm-trim-threshold)         ;; Permanence
-    (mutable syn-perm-active-inc)             ;; Permanence
-    (mutable syn-perm-inactive-dec)           ;; Permanence
+    syn-perm-active-inc                       ;; Permanence
+    syn-perm-inactive-dec                     ;; Permanence
     (mutable syn-perm-below-stimulus-inc)     ;; Permanence
-    (mutable syn-perm-connected)              ;; Permanence
-    (mutable min-pct-overlap-duty-cycles)     ;; DutyCycle
-    (mutable boost-factors)                   ;; (colVecOf BoostFactor)
+    syn-perm-connected                        ;; Permanence
+    min-pct-overlap-duty-cycles               ;; DutyCycle
+    (mutable boost-factors)                   ;; (ColVecOf BoostFactor)
     (mutable overlap-duty-cycles)             ;; (ColVecOf DutyCycle)
     (mutable active-duty-cycles)              ;; (ColVecOf DutyCycle)
     (mutable min-overlap-duty-cycles)         ;; (ColVecOf DutyCycle)
     (mutable potential-pools)                 ;; (ColVecOf Segment)
-    (mutable connected-synapses)              ;; (ColVecOf InputVec)
-    (mutable connected-counts))               ;; (ColVecOf Nat)
+    (mutable connected-synapses))             ;; (ColVecOf InputVec)
   (protocol
-    (lambda (new)                        ;; (listof KWarg) -> SP
+    (lambda (new)                        ;; (Listof KWarg) -> SP
       (lambda (kwargs)
         (let* (
             [sp          (apply new (key-word-args kwargs sp-defaults))]
@@ -121,10 +108,9 @@
                                                       (init-permanence sp (map-potential sp cx)))))
           (sp-connected-synapses-set!          sp (build-vector num-columns (lambda (cx)
                                                       (connected-inputs sp cx))))
-          (sp-connected-counts-set!            sp (make-vector (sp-num-columns sp)))
-          (for-each-segment sp (lambda (segment cx)
-              (raise-permanence-to-threshold sp segment))
-            (build-list num-columns id))
+          (for-all-columns sp (lambda (cx)
+              (raise-permanence-to-threshold sp (vector-ref (sp-potential-pools sp) cx))
+              (vector-set! (sp-connected-synapses sp) cx (connected-inputs sp cx))))
           (sp-boost-factors-set!               sp (make-vector num-columns 1.0))
           (sp-overlap-duty-cycles-set!         sp (make-vector num-columns 0.0))
           (sp-active-duty-cycles-set!          sp (make-vector num-columns 0.0))
@@ -132,7 +118,7 @@
           (sp-inhibition-radius-set!           sp (update-inhibition-radius sp))
           sp)))))
 
-(define sp-defaults `(                   ;; (listof [Keyword . X])
+(define sp-defaults `(                   ;; (Listof [Keyword . X])
     (input-dimensions                . (32 32))
     (column-dimensions               . (64 64))
     (potential-radius                . 16)
@@ -159,8 +145,7 @@
     (active-duty-cycles              . #())
     (min-overlap-duty-cycles         . #())
     (potential-pools                 . #())
-    (connected-synapses              . #())
-    (connected-counts                . #())))
+    (connected-synapses              . #())))
                                                                                             ;
 (define (sp-num-columns sp)              ;; SP -> Nat
   (apply fx* (sp-column-dimensions sp)))
@@ -172,18 +157,23 @@
                                                                                             ;
 ;; -- Compute --
                                                                                             ;
-(define (compute sp input-vector learn)  ;; SP InputVec Boolean -> (listof ColumnX)
-  ;; produce active columns from input; optionally update sp if learning
+(define (compute sp input-vector learn . ;; SP InputVec Boolean [{proc}]-> (Listof ColumnX)
+          overlaps+adapt-synapses)
+  ;; produce active columns from input; option to override calculate-overlap and adapt-synapses
   (sp-iteration-num-set! sp (fx1+ (sp-iteration-num sp)))
   (when learn (sp-iteration-learn-num-set! sp (fx1+ (sp-iteration-learn-num sp))))
   (let* (
-      [overlaps         (calculate-overlap sp input-vector)]
+      [overlaps (if (pair? overlaps+adapt-synapses)
+                    ((car overlaps+adapt-synapses) calculate-overlap)
+                    (calculate-overlap sp input-vector))]
       [boosted-overlaps (if learn
                           (vector-map fl* overlaps (sp-boost-factors sp))
                           overlaps)]
       [active-columns   (inhibit-columns sp boosted-overlaps)])
     (when learn
-      (adapt-synapses       sp input-vector active-columns)
+      (if (pair? overlaps+adapt-synapses)
+        ((cadr overlaps+adapt-synapses) active-columns)
+        (adapt-synapses sp input-vector active-columns))
       (update-duty-cycles   sp overlaps active-columns)
       (bump-up-weak-columns sp)
       (update-boost-factors sp)
@@ -199,10 +189,10 @@
   (if (or (sp-global-inhibition sp) (fx>? (sp-inhibition-radius sp) (sp-num-inputs sp)))
       (update-min-duty-cycles-global sp))
       (update-min-duty-cycles-local  sp))
-                                                                                              ;
+                                                                                            ;
 (define (flvector-max vec)               ;; (Vectorof Flonum) -> Flonum
   (vector-fold-left flmax (vector-ref vec 0) vec))
-                                                                                              ;
+                                                                                            ;
 (define (update-min-duty-cycles-global sp);; SP ->
   ;; produce minodc as percent of max odc of all columns
   (vector-fill! (sp-min-overlap-duty-cycles sp)
@@ -211,7 +201,7 @@
                                                                                             ;
 (define (update-min-duty-cycles-local sp);; SP ->
   ;; produce minodc of column as percent of max odc of columns in its neighborhood
-  (for-each-column sp (lambda (cx)
+  (for-all-columns sp (lambda (cx)
     (let* (
         [neighborhood     
           (neighborhood cx (sp-inhibition-radius sp) (sp-column-dimensions sp) (sp-wrap-around sp))]
@@ -219,7 +209,7 @@
       (vector-set! (sp-min-overlap-duty-cycles sp) cx
         (fl* max-overlap-duty (sp-min-pct-overlap-duty-cycles sp)))))))
                                                                                             ;
-(define (update-duty-cycles              ;; SP (ColVecOf Overlap) (listof ColumnX) ->
+(define (update-duty-cycles              ;; SP (ColVecOf Overlap) (Listof ColumnX) ->
           sp overlaps active-columns)
   ;; recompute duty cycles from this input's overlaps and resulting active columns
   (let ((overlap-array (vector-map (lambda (ov) (if (positive? ov) 1.0 0.0))
@@ -292,60 +282,65 @@
   (let ((dec-perm (fx- (syn-perm synapse) by)))
     (make-syn (syn-prex synapse) (if (fx<? dec-perm trim)  min-perm  dec-perm))))
                                                                                             ;
-(define (adapt-synapses                  ;; SP InputVec (listof ColumnX) ->
+(define (adapt-synapses                  ;; SP InputVec (Listof ColumnX) ->
           sp input-vector active-columns)
   ;; update permanences in segments of active columns (+ if synapse's input on, - if not)
   (let ((syn-perm-trim-threshold (sp-syn-perm-trim-threshold sp))
         (syn-perm-active-inc     (sp-syn-perm-active-inc sp))
         (syn-perm-inactive-dec   (sp-syn-perm-inactive-dec sp))
         (syn-perm-connected      (sp-syn-perm-connected sp)))
-    (for-each-segment sp (lambda (segment cx) ;; count connected & raise to threshold if needed
-        (let loop ((i (fx1- (synapses-length segment))) (num-connected 0))
-          (cond
-            [ (fxnegative? i)
-                (when (fx<? num-connected (sp-stimulus-threshold sp))
-                  (raise-permanence-to-threshold sp segment)) ]
-            [ else
-              (let* (
-                  [synapse (synapses-ref segment i)]
-                  [synapse (if (bitwise-bit-set? input-vector (syn-prex synapse))
-                               (increase-perm synapse syn-perm-active-inc)
-                               (decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold))])
-                (synapses-set! segment i synapse)
-                (loop (fx1- i) (if (fx>=? (syn-perm synapse) syn-perm-connected)
-                                   (fx1+ num-connected)
-                                   num-connected)))])))
+    (for-each (lambda (cx)            ;; count connected & raise to threshold if needed
+        (let ([segment (vector-ref (sp-potential-pools sp) cx)])
+          (let loop ((i (fx1- (synapses-length segment))) (num-connected 0))
+            (cond
+              [ (fxnegative? i)
+                  (when (fx<? num-connected (sp-stimulus-threshold sp))
+                    (raise-permanence-to-threshold sp segment))
+                  (vector-set! (sp-connected-synapses sp) cx (connected-inputs sp cx)) ]
+              [ else
+                (let* (
+                    [synapse (synapses-ref segment i)]
+                    [synapse (if (bitwise-bit-set? input-vector (syn-prex synapse))
+                                 (increase-perm synapse syn-perm-active-inc)
+                                 (decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold))])
+                  (synapses-set! segment i synapse)
+                  (loop (fx1- i) (if (fx>=? (syn-perm synapse) syn-perm-connected)
+                                     (fx1+ num-connected)
+                                     num-connected)))]))))
       active-columns)))
                                                                                             ;
 (define (bump-up-weak-columns sp)        ;; SP ->
   ;; increase permanences of columns with odc below minodc
-  (let ((weak-columns                    ;; (listof ColumnX) 
+  (let ((weak-columns                    ;; (Listof ColumnX) 
           (do ([cx (fx1- (sp-num-columns sp)) (fx1- cx)]
                [cs '() (if (fl<? (vector-ref (sp-overlap-duty-cycles sp) cx) 
                                  (vector-ref (sp-min-overlap-duty-cycles sp) cx)) 
                            (cons cx cs) 
                            cs)])
             ((fxnegative? cx ) cs)) ))
-    (for-each-segment sp (lambda (segment cx)
-        (do ([i (fx1- (synapses-length segment)) (fx1- i)]) ((fxnegative? i))
-          (synapses-set! segment i (increase-perm (synapses-ref segment i) 
-                                                (sp-syn-perm-below-stimulus-inc sp)))))
+    (for-each (lambda (cx)
+        (let ([segment (vector-ref (sp-potential-pools sp) cx)])
+          (do ([i (fx1- (synapses-length segment)) (fx1- i)]) ((fxnegative? i))
+            (synapses-set! segment i (increase-perm (synapses-ref segment i) 
+                                                  (sp-syn-perm-below-stimulus-inc sp))))
+          (vector-set! (sp-connected-synapses sp) cx (connected-inputs sp cx))))
       weak-columns)))
                                                                                             ;
 (define (raise-permanence-to-threshold   ;; SP Segment ->
           sp segment)
   ;; increase positive permanences of column until enough are connected
-  (let* ( [syn-perm-connected (sp-syn-perm-connected sp)]
-          [num-connected (synapses-count (lambda (synapse)
-                             (fx>=? (syn-perm synapse) syn-perm-connected))
-                           segment)])
-    (when (fx<? num-connected (sp-stimulus-threshold sp))
-      (let ((syn-perm-below-stimulus-inc (sp-syn-perm-below-stimulus-inc sp)))
-        (do ((i (fx1- (synapses-length segment)) (fx1- i))) ((fxnegative? i))
-          (when (positive? (synapses-ref segment i))
-            (synapses-set! segment i 
-                (increase-perm (synapses-ref segment i) syn-perm-below-stimulus-inc))))
-        (raise-permanence-to-threshold sp segment)))))
+  (unless (fxzero? (sp-stimulus-threshold sp))
+    (let* ( [syn-perm-connected (sp-syn-perm-connected sp)]
+            [num-connected (synapses-count (lambda (synapse)
+                               (fx>=? (syn-perm synapse) syn-perm-connected))
+                             segment)])
+      (when (fx<? num-connected (sp-stimulus-threshold sp))
+        (let ((syn-perm-below-stimulus-inc (sp-syn-perm-below-stimulus-inc sp)))
+          (do ((i (fx1- (synapses-length segment)) (fx1- i))) ((fxnegative? i))
+            (when (positive? (synapses-ref segment i))
+              (synapses-set! segment i 
+                  (increase-perm (synapses-ref segment i) syn-perm-below-stimulus-inc))))
+          (raise-permanence-to-threshold sp segment))))))
                                                                                             ;
 ;; -- Initialize permanences --
   ;; see https://github.com/numenta/nupic/issues/3233
@@ -358,7 +353,7 @@
 (define (init-perm-connected sp)         ;; SP -> Permanence
   ;; produce random permanence in small range above connected threshold
   (clip-max (fx+ (sp-syn-perm-connected sp)
-                 (random (fx* 5 (sp-syn-perm-inactive-dec sp))))))
+                 (fx* (fx1+ (random 5)) (sp-syn-perm-inactive-dec sp)))))
                                                                                             ;
 #;(define (init-perm-non-connected sp)     ;; SP -> Permanence
   ;; produce random permanence below connected threshold
@@ -366,10 +361,10 @@
                                                                                             ;
 (define (init-perm-non-connected sp)     ;; SP -> Permanence
   ;; produce random permanence in small range below connected threshold
-  (clip-min (fx- (sp-syn-perm-connected sp) 1
-                 (random (fx* 5 (sp-syn-perm-active-inc sp))))))
+  (clip-min (fx- (sp-syn-perm-connected sp)
+                 (fx* (fx1+ (random 5)) (sp-syn-perm-active-inc sp)))))
                                                                                             ;
-(define (init-permanence sp potential)   ;; SP (vectorof InputX) -> Segment
+(define (init-permanence sp potential)   ;; SP (Vectorof InputX) -> Segment
   ;; produce segment with initial permanences
   (build-synapses (vector-length potential) (lambda (i)
       (make-syn (vector-ref potential i)
@@ -391,7 +386,7 @@
                                                                  (map / inp-dims col-dims)))))))
         (ravel2 input-coords inp-dims)))))
                                                                                             ;
-(define (map-potential sp cx)            ;; SP ColumnX -> (vectorof InputX)
+(define (map-potential sp cx)            ;; SP ColumnX -> (Vectorof InputX)
   ;; produce vector of potential input indices for column
   (let* ((center-input (map-column sp cx))
          (column-inputs 
@@ -434,7 +429,7 @@
         (boost-func sp adc target-density)))
     (sp-active-duty-cycles sp)))
                                                                                             ;
-(define (calculate-overlap sp input-vec) ;; SP InputVec -> (ColVecOf OverlapX)
+(define (calculate-overlap sp input-vec) ;; SP InputVec -> (ColVecOf Overlap)
   ;; produce overlaps: vector of counts of intersection of input and synapses
   (let ((connected-synapses (sp-connected-synapses sp)))
     (build-vector (sp-num-columns sp) (lambda (cx)
@@ -443,7 +438,7 @@
                                                                                             ;
 ;; -- Inhibition --
                                                                                             ;
-(define (inhibit-columns sp overlaps)    ;; SP (ColVecOf OverlapX) -> (listof ColumnX)
+(define (inhibit-columns sp overlaps)    ;; SP (ColVecOf Overlap) -> (Listof ColumnX)
   ;; produce list of indices of active columns
   (let ((density
          (if (positive? (sp-local-area-density sp))
@@ -457,7 +452,7 @@
         (inhibit-columns-global sp overlaps density)
         (inhibit-columns-local  sp overlaps density))))
                                                                                             ;
-(define (inhibit-columns-global          ;; SP (ColVecOf OverlapX) Num -> (listof ColumnX)
+(define (inhibit-columns-global          ;; SP (ColVecOf Overlap) Num -> (Listof ColumnX)
           sp overlaps density)
   ;; produce indices of most active columns from given overlap counts and required density
   ;; when multiple columns have same overlap count, make random selection [cf .py "_tieBreaker"]
@@ -468,10 +463,10 @@
   (let ((ovcxs      (vector-map-x make-ovcx overlaps))
         (num-active (int<- (* density (sp-num-columns sp)))))
     (vector-sort! fx<? ovcxs)
-    (let next ([swi (list)] [batch-top (fx1- (sp-num-columns sp))])   ;; swi = sorted-winner-indices
-      (let ((batch-ov (ov (vector-ref ovcxs batch-top))))     ;; work down overlaps in batches with = count
+    (let next ([swi (list)] [batch-top (fx1- (sp-num-columns sp))])  ;; swi = sorted-winner-indices
+      (let ((batch-ov (ov (vector-ref ovcxs batch-top))))            ;; work down overlaps in batches with = count
         (let-values ([(this-batch next-top)
-            (let batch ([swi-batch (list)] [bx batch-top])            ;; (listof ColumnX) ColumnX
+            (let batch ([swi-batch (list)] [bx batch-top])           ;; (Listof ColumnX) ColumnX
               ;; produce batch and index to start next batch
               (let ((bx-ov (ov (vector-ref ovcxs bx))))
                 (cond [(fxnegative? bx) (values swi-batch -1) ]
@@ -488,43 +483,42 @@
                  (next (append swi this-batch) next-top)]            ;; append & go for more
                 [else (append swi (select))]))))))                   ;; enough active cols
                                                                                             ;
-(define (tied-overlaps overlaps this-ov) ;; (vectorof OverlapX) (OverlapX) -> (vectorof ColumnX)
+(define (tied-overlaps overlaps this-ov) ;; (Vectorof Overlap) (Overlap) -> (Vectorof ColumnX)
   ;; produce indices in neighborhood for overlaps with same count as this-ov
   (vector-filter id
     (vector-map-x (lambda (ov cx)
         (if (fl=? ov this-ov) cx #f))
       overlaps)))
                                                                                             ;
-(define (inhibit-columns-local           ;; SP (ColVecOf OverlapX) Num -> (listof ColumnX)
+(define (inhibit-columns-local           ;; SP (ColVecOf Overlap) Num -> (Listof ColumnX)
           sp overlaps density)
   ;; produce indices of most active columns within each column's locality
   (let ((active (make-vector (sp-num-columns sp) #f)))
-    (for-each-column sp
-      (lambda (cx)                 ;; ColumnX -> [set active if in top [req density] cols in its neighborhood]
+    (for-all-columns sp (lambda (cx)     ;; ColumnX -> [set active if in top [req density] cols in its neighborhood]
         (let ((this-ov (vector-ref overlaps cx)))
-          (when (> this-ov (sp-stimulus-threshold sp))
+          (when (fl>? this-ov (fixnum->flonum (sp-stimulus-threshold sp)))
             (let* ((neighbors      
-                    (neighborhood cx (sp-inhibition-radius sp) (sp-column-dimensions sp) (sp-wrap-around sp)))
+                     (neighborhood cx (sp-inhibition-radius sp) (sp-column-dimensions sp) (sp-wrap-around sp)))
                    (nhood-overlaps (vector-refs overlaps neighbors))
-                   (num-bigger     (vector-count (lambda (ov) (> ov this-ov)) nhood-overlaps))
+                   (num-bigger     (vector-count (lambda (ov) (fl>? ov this-ov)) nhood-overlaps))
                    (tied-neighbors (tied-overlaps nhood-overlaps this-ov))
                    (num-ties-lost  (vector-count (lambda (cx) (vector-ref active cx)) tied-neighbors)))
-              (when (< (+ num-bigger num-ties-lost) (int<- (* density (vector-length neighbors))))
+              (when (fx<? (fx+ num-bigger num-ties-lost) (int<- (* density (vector-length neighbors))))
                 (vector-set! active cx #t)))))))
     (vector-indices active)))
                                                                                             ;
 ;; -- Topology --
                                                                                             ;
-(define (ravel2 coords dims)             ;; (listof Nat) (listof Nat) -> Nat
+(define (ravel2 coords dims)             ;; (Listof Nat) (Listof Nat) -> Nat
   ;; produce index for {row-coord, col-coord} in matrix of {nrows, ncols}
   (fx+ (fx* (car coords) (cadr dims)) (cadr coords)))
                                                                                             ;
-(define (unravel2 index dims)            ;; Nat (listof Nat) -> (listof Nat)
+(define (unravel2 index dims)            ;; Nat (Listof Nat) -> (Listof Nat)
   ;; produce {row-coord, col-coord} from index in matrix of {nrows,ncols}
   (let-values (((rows cols) (fxdiv-and-mod index (cadr dims))))
     (list rows cols)))
                                                                                             ;
-(define (neighborhood center radius      ;; Nat Nat (listof Nat) Boolean -> (Vectorof Nat)
+(define (neighborhood center radius      ;; Nat Nat (Listof Nat) Boolean -> (Vectorof Nat)
            dims wrap-around)
   ;; produce indices of elements within radius of center; 1 or 2 dimensional
   (let ((finish (lambda (center dim) (min (+ center radius 1) dim))))
@@ -555,27 +549,18 @@
                                                                                             ;
 (define (connected-inputs sp cx)         ;; SP ColumnX -> InputVec
   ;; produce bitwise vector of whether permanence of synapses of column > connected threshold
-  (let* ( (segment            (vector-ref (sp-potential-pools sp) cx))
-          (syn-perm-connected (sp-syn-perm-connected sp)))
+  (let ([segment            (vector-ref (sp-potential-pools sp) cx)]
+        [syn-perm-connected (sp-syn-perm-connected sp)])
     (do ( [sx (fx1- (synapses-length segment)) (fx1- sx)]
           [connected 0
-            (let ((synapse (synapses-ref segment sx)))
+            (let ([synapse (synapses-ref segment sx)])
               (if (fx>=? (syn-perm synapse) syn-perm-connected)
                   (bitwise-copy-bit connected (syn-prex synapse) 1)
                   connected))])
         ((fxnegative? sx) connected))))
                                                                                             ;
-(define (for-each-segment sp proc cols)  ;; SP (Segment ColumnX -> ) {ColumnX} ->
-  ;; apply proc to segment of each col, and update connected caches for col
-  (for-each (lambda (cx)
-      (proc (vector-ref (sp-potential-pools sp) cx) cx)
-      (let ((connected (connected-inputs sp cx)))
-        (vector-set! (sp-connected-synapses sp) cx connected)
-        (vector-set! (sp-connected-counts sp) cx (bitwise-bit-count connected))))
-    cols))
-                                                                                            ;
-(define (for-each-column sp proc)  ;; SP (ColumnX -> ) ->
-  ;; apply proc to each column index
+(define (for-all-columns sp proc)        ;; SP (ColumnX -> ) ->
+  ;; apply proc to all column indices
   (do ([cx (fx1- (sp-num-columns sp)) (fx1- cx)]) ((fxnegative? cx ))
     (proc cx)))
                                                                                             ;
@@ -589,7 +574,7 @@
         (COL (lambda ps 
               (build-synapses (length ps) (lambda (sx) (make-syn sx (list-ref ps sx)))))))
 
-    [sp-potential-pools-set! SP42 (vector (COL 101) (COL 0 101 101))]
+    [sp-potential-pools-set! SP42 (vector (COL (perm .2)) (COL 0 (perm .2) (perm .2)))]
     [sp-connected-synapses-set! SP42
       (vector (connected-inputs SP42 0) (connected-inputs SP42 1))]
 
@@ -608,7 +593,7 @@
     [expect ( [avg-connected-span-1d SP42 1] 2 )]
 
     (let ((SP2221 (make-sp `([input-dimensions . (2 2)] [column-dimensions . (2 1)]))))
-      [sp-potential-pools-set! SP2221 (vector (COL 0 101 101 0) (COL 0))]
+      [sp-potential-pools-set! SP2221 (vector (COL 0 (perm .2) (perm .2) 0) (COL 0))]
       [sp-connected-synapses-set! SP2221
         (vector (connected-inputs SP2221 0) (connected-inputs SP42 1))]
       [expect ( [avg-connected-span-2d SP2221 0] 1.5 )])

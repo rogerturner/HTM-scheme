@@ -59,6 +59,7 @@
   number-of-apical-synapses
   map-segments-to-cells
   cols-from-cells                        ;; for l2l4_patch
+  get-all-cells-in-columns
   (rename                                ;; for temporal_memory_test
     (create-segment       test:create-segment)
     (tm-basal-connections test:tm-basal-connections)
@@ -67,10 +68,10 @@
     (tm-next-flatx        test:tm-next-flatx)))
                                                                                             ;
 (import
-  (except (chezscheme) add1 make-list random reset)
+  (except (chezscheme) reset)
   (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept))
-  
+
 ;; === Types (see htm_concept.ss) ===
                                                                                             ;
 ;; FlatX        = Nat, segment sequence number
@@ -100,7 +101,9 @@
     max-synapses-per-segment             ;; Fixnum [-1 => unlimited]
     seed                                 ;; Integer
     use-apical-tiebreak                  ;; Boolean
-    use-apical-modulation-basal-threshold ;; Boolean
+    use-apical-modulation-basal-threshold;; Boolean
+    has-recurrent-connections            ;; Boolean
+    cost-center
     (mutable basal-connections)          ;; (CellVecOf (listof Segment))
     (mutable apical-connections)         ;; (CellVecOf (listof Segment))
     (mutable active-cells)               ;; (listof CellX)
@@ -149,6 +152,8 @@
   [seed                                  . 42]
   [use-apical-tiebreak                   . #t]
   [use-apical-modulation-basal-threshold . #t]
+  [has-recurrent-connections             . #f]
+  [cost-center                           . ,(make-cost-center)]
   [basal-connections                     . #()]
   [apical-connections                    . #()]
   [active-cells                          . ()]
@@ -179,8 +184,8 @@
   (tm-active-apical-segments-set!    tm '())
   (tm-matching-basal-segments-set!   tm '())
   (tm-matching-apical-segments-set!  tm '())
-  (tm-basal-potential-overlaps-set!  tm (fxvector))
-  (tm-apical-potential-overlaps-set! tm (fxvector)))
+  (tm-basal-potential-overlaps-set!  tm (overlap))
+  (tm-apical-potential-overlaps-set! tm (overlap)))
                                                                                             ;
 (define (depolarize-cells                ;; TM {CellX} {CellX} Boolean ->
           tm basal-input apical-input learn)
@@ -353,6 +358,54 @@
   (calculate-segment-activity tm active-input (tm-basal-pre-index tm)
     (tm-reduced-basal-threshold tm) reduced-basal-threshold-cells))
                                                                                             ;
+#;(define (compute-activity                ;; TM {CellX} (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (Vectorof Nat)
+          tm active-input pre-index reduced-threshold reduced-threshold-cells)
+  ;; "Calculate the active and matching segments for this timestep" 
+  ;; (translation of connections.computeActivity, much slower than calculate-segment-activity below)
+  (let (
+    [segments       (tm-seg-index tm)]
+    [bitwise-inputs (list->bitwise active-input)]
+    [nsegs          (tm-next-flatx tm)])
+    (let* (
+        [connected-permanence (tm-connected-permanence tm)]
+        [overlaps (make-overlap nsegs 0)])
+      (do ([segx 0 (fx1+ segx)]) ((fx=? segx nsegs))
+        (let ([synapses (seg-synapses (vector-ref segments segx))])
+          (do ([synx (fx1- (synapses-length synapses)) (fx1- synx)]) ((fxnegative? synx))
+            (when (and (bitwise-bit-set? bitwise-inputs (syn-prex (synapses-ref synapses synx)))
+                       (fx>=? (syn-perm (synapses-ref synapses synx)) connected-permanence))
+              (overlap-set! overlaps segx (fx1+ (overlap-ref overlaps segx)))))))
+      (let* (
+          [activation-threshold (tm-activation-threshold tm)]
+          [active-segments
+            (if (fxzero? nsegs) '()
+            (do ( [segx (fx1- nsegs) (fx1- segx)]
+                  [ass '() (if (fx>=? (overlap-ref overlaps segx) activation-threshold)
+                              (cons (vector-ref segments segx) ass)
+                              ass)])
+                ((fxnegative? segx) ass)))])
+        (bytevector-fill! overlaps 0)
+        (do ([segx 0 (fx1+ segx)]) ((fx=? segx nsegs))
+          (let ([synapses (seg-synapses (vector-ref segments segx))])
+            (do ([synx (fx1- (synapses-length synapses)) (fx1- synx)]) ((fxnegative? synx))
+              (when (bitwise-bit-set? bitwise-inputs (syn-prex (synapses-ref synapses synx)))
+                (overlap-set! overlaps segx (fx1+ (overlap-ref overlaps segx)))))))
+        (let* (
+            [min-threshold (tm-min-threshold tm)]
+            [matching-segments
+              (if (fxzero? nsegs) '()
+              (do ( [segx (fx1- nsegs) (fx1- segx)]
+                    [mss '() (if (fx>=? (overlap-ref overlaps segx) min-threshold)
+                                (cons (vector-ref segments segx) mss)
+                                mss)])
+                  ((fxnegative? segx) mss)))])
+          (values
+            (sort! (lambda (sega segb) (fx<? (seg-cellx sega) (seg-cellx segb)))
+              active-segments)
+            (sort! (lambda (sega segb) (fx<? (seg-cellx sega) (seg-cellx segb)))
+              matching-segments)
+            overlaps))))))
+                                                                                            ;
 (define (calculate-predicted-cells tm    ;; TM {Seg} {Seg} -> {CellX}
           active-basal-segments active-apical-segments)
   ;; calculate predicted cells for given active segments
@@ -395,15 +448,15 @@
   ;; adjust synapse permanences, grow new synapses, and grow new segments
   (adjust-synapses tm connections learning-segments active-input)
   (let* ( 
-      (ss (tm-sample-size tm))
-      (max-new                           ;; Nat | {Nat}
+      [ss (tm-sample-size tm)]
+      [max-new                           ;; Nat | {Nat}
         (if (fxnegative? ss)
           (length growth-candidates)
           (map (lambda (seg)
-              (fx- ss (fxvector-ref potential-overlaps (seg-flatx seg))))
-            learning-segments)))
-      (msps (tm-max-synapses-per-segment tm))
-      (max-new
+              (fx- ss (overlap-ref potential-overlaps (seg-flatx seg))))
+            learning-segments))]
+      [msps (tm-max-synapses-per-segment tm)]
+      [max-new
           (if (fxnegative? msps)
             max-new
             (if (fxnegative? ss)
@@ -414,75 +467,86 @@
               (map (lambda (seg m-n)
                   (fxmin m-n
                     (fx- msps (synapses-length (seg-synapses seg)))))
-                learning-segments max-new)))))
+                learning-segments max-new)))])
     (grow-synapses-to-sample tm learning-segments growth-candidates max-new pre-index)))
                                                                                             ;
 (define (learn-on-new-segments tm        ;; TM Connections {CellX} {CellX} (CellVecOf {FlatX}) ->
           connections new-segment-cells growth-candidates pre-index)
   ;; create segments for new-segment-cells and connect to growth-candidates
   (let* ( 
-      (num-new-synapses (length growth-candidates))
-      (num-new-synapses (if (fxnegative? (tm-sample-size tm))
+      [num-new-synapses (length growth-candidates)]
+      [num-new-synapses (if (fxnegative? (tm-sample-size tm))
                           num-new-synapses
-                          (fxmin num-new-synapses (tm-sample-size tm))))
-      (num-new-synapses (if (fxnegative? (tm-max-synapses-per-segment tm))
+                          (fxmin num-new-synapses (tm-sample-size tm)))]
+      [num-new-synapses (if (fxnegative? (tm-max-synapses-per-segment tm))
                           num-new-synapses
-                          (fxmin num-new-synapses (tm-max-synapses-per-segment tm))))
-      (new-segments (create-segments tm connections new-segment-cells)))
+                          (fxmin num-new-synapses (tm-max-synapses-per-segment tm)))]
+      [new-segments     
+        #;(let build-segments ([cells new-segment-cells] [segments (list)])
+          (if (null? cells)  segments
+            (let* ( [cur-segs (list->vector (vector-ref connections (car cells)))]
+                    [nsegs    (vector-length cur-segs)]
+                    [segx     (random (fx1+ nsegs))])
+              (build-segments (cdr cells)
+                (cons
+                  (if (or (zero? segx) (tm-has-recurrent-connections tm))
+                    (create-segment tm (car cells) connections)
+                    (vector-ref cur-segs (fx1- segx))) segments)))))
+        (create-segments tm connections new-segment-cells)])
     (grow-synapses-to-sample tm new-segments growth-candidates num-new-synapses pre-index)))
                                                                                             ;
-(define (choose-best-segment-per-cell    ;; {CellX} {Seg} (vectorof Nat) -> {Seg}
+(define (choose-best-segment-per-cell    ;; {CellX} {Seg} Overlaps -> {Seg}
           cells all-matching-segments potential-overlaps)
   ;; choose matching segment with max active potential synapses (on tie choose first)
-  (let next-cell ((cells cells) (learning-segments '()))
+  (let next-cell ([cells cells] [learning-segments '()])
     (if (null? cells) 
-      (reverse learning-segments)
-      (let next-segment ( (segments all-matching-segments) 
-                          (best-seg #f) 
-                          (max-overlap (least-fixnum)))
+      (reverse! learning-segments)
+      (let next-segment ( [segments all-matching-segments] 
+                          [best-seg #f] 
+                          [max-overlap (least-fixnum)])
         (cond
           [ (null? segments) (next-cell (cdr cells) (cons best-seg learning-segments)) ]
           [ (fx=? (car cells) (seg-cellx (car segments)))
-              (let ((overlap (fxvector-ref potential-overlaps (seg-flatx (car segments)))))
+              (let ((overlap (overlap-ref potential-overlaps (seg-flatx (car segments)))))
                 (if (fx>? overlap max-overlap)
                     (next-segment (cdr segments) (car segments) overlap)
                     (next-segment (cdr segments) best-seg max-overlap))) ]
           [ else (next-segment (cdr segments) best-seg max-overlap) ] )))))
                                                                                             ;
-(define (choose-best-segment-per-column  ;; TM {CellX} {Seg} (vectorof Nat) -> {Seg}
+(define (choose-best-segment-per-column  ;; TM {CellX} {Seg} Overlaps -> {Seg}
           tm matching-cells all-matching-segments potential-overlaps)
   ;; like choose-best-segment-per-cell but for cells in col
   (let* ( 
-      (candidate-segments
-        (filter-segments-by-cell all-matching-segments matching-cells))
-      (cell-scores
+      [candidate-segments
+        (filter-segments-by-cell all-matching-segments matching-cells)]
+      [cell-scores
         (map (lambda (segment)
-            (fxvector-ref potential-overlaps (seg-flatx segment)))
-          candidate-segments))
-      (columns-for-candidates
-        (map (/cpc tm) (map-segments-to-cells candidate-segments)))
-      (one-per-column-filter 
-        (argmax-multi cell-scores columns-for-candidates))
-      (learning-segments
+            (overlap-ref potential-overlaps (seg-flatx segment)))
+          candidate-segments)]
+      [columns-for-candidates
+        (map (/cpc tm) (map-segments-to-cells candidate-segments))]
+      [one-per-column-filter 
+        (argmax-multi cell-scores columns-for-candidates)]
+      [learning-segments
         (vector->list (vector-refs (list->vector candidate-segments)
-                                   (list->vector one-per-column-filter)))))
+                                   (list->vector one-per-column-filter)))])
     learning-segments))
                                                                                             ;
 (define (get-cells-with-fewest-segments  ;; TM {ColX} -> {CellX}
           tm columnxs)
   ;; produce cell for each col with fewest total basal segments; break ties randomly
   (map (lambda (colx)
-      (let loop ((cellx (fx* colx (tm-cells-per-column tm)))
-                 (candidate-cells '())
-                 (fewest-segs (greatest-fixnum)))
-        (if (fx<? cellx (fx* (add1 colx) (tm-cells-per-column tm)))
+      (let loop ([cellx (fx* colx (tm-cells-per-column tm))]
+                 [candidate-cells '()]
+                 [fewest-segs (greatest-fixnum)])
+        (if (fx<? cellx (fx* (fx1+ colx) (tm-cells-per-column tm)))
           (let ((n-segs (length (vector-ref (tm-basal-connections tm) cellx))))
             (cond
               [ (fx<? n-segs fewest-segs)
-                  (loop (add1 cellx) (list cellx) n-segs) ]
+                  (loop (fx1+ cellx) (list cellx) n-segs) ]
               [ (fx=? n-segs fewest-segs)
-                  (loop (add1 cellx) (cons cellx candidate-cells) n-segs) ]
-              [ else (loop (add1 cellx) candidate-cells fewest-segs) ] ))
+                  (loop (fx1+ cellx) (cons cellx candidate-cells) n-segs) ]
+              [ else (loop (fx1+ cellx) candidate-cells fewest-segs) ] ))
           (list-ref candidate-cells (random (length candidate-cells))))))
     columnxs))
                                                                                             ;
@@ -521,13 +585,19 @@
                                                                                             ;
 ;; --- Connections: see NuPIC connections.py ---
                                                                                             ;
+(define (overlap)                (bytevector))
+(define (make-overlap n)         (make-bytevector (fx* n 2) 0))
+(define (overlap-ref  ovs n)     (bytevector-u16-native-ref  ovs (fx* n 2)))
+(define (overlap-set! ovs n u16) (bytevector-u16-native-set! ovs (fx* n 2) u16))
+                                                                                            ;
 (define (calculate-segment-activity      ;; TM {CellX} (CellVecOf {FlatX}) Nat {CellX} -> {Segment} {Segment} (Vectorof Nat)
           tm active-input pre-index reduced-threshold reduced-threshold-cells)
   ;; for active-input cells, produce lists of segments with connected/potential synapses,
   ;; and potential synapse counts (combines connections.computeActivity and _calculateApical/BasalSegmentActivity)
+  (define (do-calculate-segment-activity)
   (let (
-    (napsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-potential-synapses-for-segment"
-    (nacsfs     (make-fxvector (tm-next-flatx tm) 0)) ;; "num-active-connected-synapses-for-segment"
+    (napsfs     (make-overlap (tm-next-flatx tm))) ;; "num-active-potential-synapses-for-segment"
+    (nacsfs     (make-overlap (tm-next-flatx tm))) ;; "num-active-connected-synapses-for-segment"
     (threshold  (tm-connected-permanence tm))
     (segments   (tm-seg-index tm))
     (actsegs    '())
@@ -538,7 +608,7 @@
     (define (update-actsegs segx synapse)
       (when (fx>=? (syn-perm synapse) threshold)
         (let ((segment    (vector-ref segments segx))
-              (new-nacsfs (add1 (fxvector-ref nacsfs segx))))
+              (new-nacsfs (fx1+ (overlap-ref nacsfs segx))))
           (if no-reduced
               (when (fx=? new-nacsfs actthresh)
                 (unless (memq segment actsegs)
@@ -548,22 +618,21 @@
                         (fx=? new-nacsfs actthresh))
                 (unless (memq segment actsegs)
                   (set! actsegs (cons segment actsegs)))))
-          (fxvector-set! nacsfs segx new-nacsfs))))
-    (define (update-potsegs segx syn-low syn-high)
-      (let* ( (synapses (seg-synapses (vector-ref segments segx)))
-              (synapse  (synapses-search synapses syn-low syn-high)))
+          (overlap-set! nacsfs segx new-nacsfs))))
+    (define (update-potsegs segx syn-low)
+      (let ([synapse
+              (synapses-search (seg-synapses (vector-ref segments segx))
+                               syn-low (fx+ syn-low max-perm))])
         (when synapse
-          (let ((new-napsfs (add1 (fxvector-ref napsfs segx))))
+          (let ((new-napsfs (fx1+ (overlap-ref napsfs segx))))
             (when (fx=? new-napsfs potthresh)
               (set! potsegs (cons (vector-ref segments segx) potsegs)))
-            (fxvector-set! napsfs segx new-napsfs))
+            (overlap-set! napsfs segx new-napsfs))
           (update-actsegs segx synapse))))
     (for-each (lambda (inpx)
-        (let* ((syn-low  (make-syn inpx min-perm))
-               (syn-high (fx+ syn-low max-perm)))
-          (for-each (lambda (segx)
-              (update-potsegs segx syn-low syn-high))
-            (vector-ref pre-index inpx))))
+        (for-each (lambda (segx)
+            (update-potsegs segx (make-syn inpx min-perm)))
+          (vector-ref pre-index inpx)))
       active-input)
     (values actsegs
       (unique! eq? (sort!
@@ -574,6 +643,14 @@
                 [else #f]))
         potsegs))
       napsfs)))
+  (do-calculate-segment-activity)
+  #;(with-cost-center #t (tm-cost-center tm) do-calculate-segment-activity)
+  ;; $ scheme --program untangling_sequences.wp 6 -it -nr 20 -rsl
+  ;;  5.31s in cost center 1
+  ;;  759 collections
+  ;;  7.747896797s elapsed cpu time, including 0.229975063s collecting
+  ;;  6423859296 bytes allocated, including 6400110688 bytes reclaimed
+  )
                                                                                             ;
 (define (map-segments-to-cells segments) ;; {Seg} -> {CellX}
   ;; produce cellxs from segments
@@ -626,7 +703,7 @@
 (define (argmax-multi a group-keys)      ;; {Number} {Number} -> {Nat}
   ;; gets the indices of the max values of each group in 'a', grouping the
   ;; elements by their corresponding value in 'groupKeys'.
-  (let per-group ((a a) (group-keys group-keys) (index 0) (result '()))
+  (let per-group ([a a] [group-keys group-keys] [index 0] [result '()])
     (cond
       [ (null? group-keys) (reverse result) ]
       [ else
@@ -636,36 +713,36 @@
               [ (null? group-keys) (per-group a group-keys index (cons index-of-max result)) ]
               [ (fx=? (car group-keys) group)
                   (if (fx>? (car a) max-in-group)
-                    (next (cdr a) (cdr group-keys) (add1 index) (car a) index)
-                    (next (cdr a) (cdr group-keys) (add1 index) max-in-group index-of-max)) ]
+                    (next (cdr a) (cdr group-keys) (fx1+ index) (car a) index)
+                    (next (cdr a) (cdr group-keys) (fx1+ index) max-in-group index-of-max)) ]
               [ else (per-group a group-keys index (cons index-of-max result)) ]))) ])))
                                                                                             ;
 (define (get-all-cells-in-columns tm     ;; TM {ColX} -> {CellX}
            colxs)
   ;; produce all cellxs in the colxs
-  (let ((cpc (tm-cells-per-column tm)))
+  (let ([cpc (tm-cells-per-column tm)])
     (apply append! 
       (map (lambda (colx)
-          (let ((first (fx* colx cpc)))
+          (let ([first (fx* colx cpc)])
             (build-list cpc (lambda (i) (fx+ first i)))))
         colxs))))
                                                                                             ;
 (define (prune-synapses syns omits)      ;; Synapses (listof Nat) -> Synapses
   ;; omit from synapses elements indexed by omits (which is sorted)
-  (let* ( (reslen (fx- (synapses-length syns) (length omits)))
-          (result (make-synapses reslen)))
-  (let loop ((rx 0) (sx 0) (omits omits))
+  (let* ( [reslen (fx- (synapses-length syns) (length omits))]
+          [result (make-synapses reslen)])
+  (let loop ([rx 0] [sx 0] [omits omits])
       (cond [ (fx=? rx reslen) result ]
             [ (if (null? omits) #f
-                (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
+                (fx=? sx (car omits))) (loop rx (fx1+ sx) (cdr omits)) ]
             [ else
                 (synapses-set! result rx (synapses-ref syns sx))
-                (loop (add1 rx) (add1 sx) omits) ]))))
+                (loop (fx1+ rx) (fx1+ sx) omits) ]))))
                                                                                             ;
 (define (destroy-segment tm segment)     ;; TM Seg ->
   ;; make segment's flatx available for re-use
-  (let* ( (flatx (seg-flatx segment))
-          (null-segment (make-seg -1 flatx (make-synapses 0))))
+  (let* ( [flatx (seg-flatx segment)]
+          [null-segment (make-seg -1 flatx (make-synapses 0))])
     (vector-set! (tm-seg-index tm) flatx null-segment)
     (tm-free-flatx-set! tm (cons flatx (tm-free-flatx tm)))))
                                                                                             ;
@@ -673,9 +750,10 @@
           active-input connections permanence-delta permanence-decrement)
   ;; Updates synapses on segment. Strengthens active synapses; weakens inactive synapses.
   ;; Remove synapse on zero permanence, destroy segment if no synapses left.
-  (let ((synapses (seg-synapses segment)))
-    (let build-s-t-d ((sx (fx- (synapses-length synapses) 1))
-                      (synapses-to-destroy '()))
+  (let ([synapses (seg-synapses segment)]
+        [trim-permanence (fx* 2 (tm-permanence-increment tm))])
+    (let build-s-t-d ([sx (fx1- (synapses-length synapses))]
+                      [synapses-to-destroy '()])
       (if (negative? sx)
           (cond [ (null? synapses-to-destroy) ]
                 [ (fx=? (length synapses-to-destroy) (synapses-length synapses))
@@ -685,25 +763,25 @@
                 [ else
                     (seg-synapses-set! segment 
                          (prune-synapses synapses synapses-to-destroy)) ])
-          (let* ( (synapse    (synapses-ref synapses sx))
-                  (prex       (syn-prex synapse))
-                  (permanence (if (fxsearch active-input prex)
+          (let* ( [synapse    (synapses-ref synapses sx)]
+                  [prex       (syn-prex synapse)]
+                  [permanence (if (fxsearch active-input prex)
                                 (clip-max (clip-min (fx+ (syn-perm synapse) permanence-delta)))
-                                (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
-            (if (zero? permanence)
+                                (clip-min (fx- (syn-perm synapse) permanence-decrement)))])
+            (if (fx<? permanence trim-permanence) #;(zero? permanence)
                 ;; build synapses-to-destroy indices as sorted list
-                (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
+                (build-s-t-d (fx1- sx) (cons sx synapses-to-destroy))
                 (begin
                   (synapses-set! synapses sx (make-syn prex permanence))
-                  (build-s-t-d (fx- sx 1) synapses-to-destroy))))))))
+                  (build-s-t-d (fx1- sx) synapses-to-destroy))))))))
                                                                                             ;
 (define (adjust-synapses tm              ;; TM Connections {Seg} {CellX} ->
           connections segments active-input)
   ;; For each specified segment, update the permanence of each synapse
   ;; according to whether the synapse would be active given the specified
   ;; active inputs.
-  (let ((inc (tm-permanence-increment tm))
-        (dec (tm-permanence-decrement tm)))
+  (let ([inc (tm-permanence-increment tm)]
+        [dec (tm-permanence-decrement tm)])
     (for-each (lambda (segment)
         (adapt-segment tm segment active-input connections inc dec))
       segments)))
@@ -730,31 +808,30 @@
                                                                                             ;
 (define (in-synapses? cellx synapses)    ;; CellX Synapses -> Boolean
   ;; produce whether cellx equals any pre-synaptic-cell index of synapses
-  (let* ( (syn-low  (make-syn cellx min-perm))
-          (syn-high (fx+ syn-low max-perm)))
+  (let* ( [syn-low  (make-syn cellx min-perm)]
+          [syn-high (fx+ syn-low max-perm)])
     (synapses-search synapses syn-low syn-high)))
                                                                                             ;
 (define (add-to-pre-index                ;; CellX Seg (CellVecOf {FlatX}) ->
           prex seg pre-index)
   ;; add to the list of segment flatxs with synapses from the pre-synaptic cell
   (let ((pre-list (vector-ref pre-index prex)))
-    (when (not (memv (seg-flatx seg) pre-list))
+    (unless (memv (seg-flatx seg) pre-list)
       (vector-set! pre-index prex (cons (seg-flatx seg) pre-list)))))
                                                                                             ;
 (define (grow-synapses                   ;; TM Seg Nat {CellX} (CellVecOf {FlatX}) ->
           tm segment n-desired-new-synapses inputs pre-index)
   ;; grow synapses to all inputs that aren't already connected to the segment
-  (let build-candidates ((cis '())       ;; candidate inputs
-                         (is inputs) (nc 0))
+  (let build-candidates ([cis '()] [is inputs] [nc 0])  ;; candidate inputs
     (cond 
       [ (null? is)
         (if (fx<=? nc n-desired-new-synapses)
-          (let ((init-perm (tm-initial-permanence tm)))
+          (let ([init-perm (tm-initial-permanence tm)])
             (seg-synapses-set! segment 
               (list->synapses (merge! fx<?
                   (sort! fx<?
                     (let map-car! 
-                           ((cic cis))   ;; candidate inputs cursor
+                           ([cic cis])   ;; candidate inputs cursor
                       (cond [(null? cic) cis]
                         [else
                           (add-to-pre-index (car cic) segment pre-index)
@@ -762,8 +839,8 @@
                           (map-car! (cdr cic)) ])))
                   (synapses->list (seg-synapses segment))))))
           (when (positive? n-desired-new-synapses)
-            (let ((new-prexs (vector-sample (list->vector cis) n-desired-new-synapses))
-                  (init-perm (tm-initial-permanence tm)))
+            (let ([new-prexs (vector-sample (list->vector cis) n-desired-new-synapses)]
+                  [init-perm (tm-initial-permanence tm)])
               (vector-sort! fx<? new-prexs)
               (seg-synapses-set! segment 
                 (list->synapses (merge! fx<? 
@@ -774,22 +851,22 @@
                     (synapses->list (seg-synapses segment)))))))) ]
       [ (in-synapses? (car is) (seg-synapses segment))
           (build-candidates cis (cdr is) nc) ]
-      [ else (build-candidates (cons (car is) cis) (cdr is) (add1 nc)) ])))
+      [ else (build-candidates (cons (car is) cis) (cdr is) (fx1+ nc)) ])))
                                                                                             ;
 (define (create-segment tm               ;; TM CellX Connections -> Seg
           cellx connections)
   ;; produce a new segment on the cell, updating the index of segments
-  (let* ( (segments (vector-ref connections cellx))
-          (new-flatx (if (null? (tm-free-flatx tm))
+  (let* ( [segments (vector-ref connections cellx)]
+          [new-flatx (if (null? (tm-free-flatx tm))
                           (let ((next (tm-next-flatx tm)))
                             (when (fx=? next (vector-length (tm-seg-index tm)))
                               (tm-seg-index-set! tm (vector-extend (tm-seg-index tm))))
                             next)  
-                          (car (tm-free-flatx tm))))
-          (segment (make-seg cellx new-flatx (make-synapses 0))))
+                          (car (tm-free-flatx tm)))]
+          [segment (make-seg cellx new-flatx (make-synapses 0))])
     (vector-set! (tm-seg-index tm) new-flatx segment)
     (if (null? (tm-free-flatx tm))
-      (tm-next-flatx-set! tm (add1 new-flatx))
+      (tm-next-flatx-set! tm (fx1+ new-flatx))
       (tm-free-flatx-set! tm (cdr (tm-free-flatx tm))))
     (vector-set! connections cellx (cons segment segments))
     segment))

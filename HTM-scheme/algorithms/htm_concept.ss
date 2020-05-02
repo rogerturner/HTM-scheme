@@ -75,12 +75,12 @@
   )
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list random reset)
+  (chezscheme)
   (HTM-scheme HTM-scheme algorithms htm_prelude))
 
 ;; --- Permanence values ---
                                                                                             ;
-(define max-perm fx3)
+(define max-perm 255)
 (define min-perm   0)
                                                                                             ;
 (define (clip-max perm)                  ;; Perm -> Perm
@@ -90,11 +90,11 @@
   (fxmax min-perm perm))
                                                                                             ;
 (define (perm x)                         ;; Number[0.0-1.0] -> Perm
-  (clip-max (clip-min (fx3<- x))))
+  (clip-max (fxmax 1 (int<- (* x max-perm)))))
 
-;; --- Synapses: bytevectors on 64-bit, fxvectors on 32-bit ---
+;; --- Synapses ---
                                                                                             ;
-(define prex-shift 1024)
+(define prex-shift 256)
 (define native (native-endianness))
                                                                                             ;
 (define (make-synapses n)
@@ -115,46 +115,18 @@
 (define (list->synapses l)
   (uint-list->bytevector l native 4))
                                                                                             ;
-(define prex-offset                      ;; -> Fixnum
-  ;; don't offset synapse values
-  0)
-                                                                                            ;
-#|
-  (define-syntax make-synapses             ;; Nat [Fixnum] -> Synapses
-    (identifier-syntax make-fxvector))     ;; (change fxvector to vector for R6RS)
-                                                                                              ;
-  (define-syntax synapses-ref              ;; Synapses Nat -> Synapse
-    (identifier-syntax fxvector-ref))
-                                                                                              ;
-  (define-syntax synapses-set!             ;; Synapses Nat Synapse ->
-    (identifier-syntax fxvector-set!))
-                                                                                              ;
-  (define-syntax synapses-length           ;; Synapses -> Nat
-    (identifier-syntax fxvector-length))
-                                                                                              ;
-  (define-syntax synapses->list            ;; Synapses -> Nat
-    (identifier-syntax fxvector->list))
-                                                                                              ;
-  (define-syntax list->synapses            ;; Synapses -> Nat
-    (identifier-syntax list->fxvector))
-                                                                                              ;
-  (define prex-offset                      ;; -> Fixnum
-    ;; offset synapse values to maximize available pre-cell index
-    (add1 (fxdiv (least-fixnum) prex-shift)))
-  |#
-                                                                                            ;
 (define (make-syn prex perm)             ;; PreX Perm -> Synapse
-  (fx+ (fx* (fx+ prex prex-offset) prex-shift) perm))
+  (fx+ (fx* prex prex-shift) perm))
                                                                                             ;
 (define (syn-prex synapse)               ;; Synapse -> PreX
-  (fx- (fxdiv synapse prex-shift) prex-offset))
+  (fxdiv synapse prex-shift))
                                                                                             ;
 (define (syn-perm synapse)               ;; Synapse -> Perm
   (fxmod synapse prex-shift))
                                                                                             ;
 (define (build-synapses n proc)          ;; Nat (Nat -> Synapse) -> Synapses
   (let ((synapses (make-synapses n)))
-    (do ((i 0 (add1 i))) ((fx=? i n) synapses)
+    (do ((i 0 (fx1+ i))) ((fx=? i n) synapses)
       (synapses-set! synapses i (proc i)))))
                                                                                             ;
 (define (synapses-count proc syns)       ;; (Synapse -> Boolean) Synapses -> Nat
@@ -165,16 +137,18 @@
                      count)])
       ((fxnegative? sx) count)))
                                                                                             ;
-(define (synapses-search                 ;; Synapses Synapse Synapse -> Synapse|#f
-          syns syn-low syn-high)
-  (let search ((left 0) (right (fx- (synapses-length syns) 1)))
-    (if (fx>? left right) #f
-      (let* ( (mid (fxdiv (fx+ left right) 2))
-              (synapse (synapses-ref syns mid))) 
-        (cond 
-          [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
-          [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
-          [else synapse])))))
+(define-syntax synapses-search           ;; Synapses Synapse Synapse -> Synapse|#f
+  (lambda (x)
+    (syntax-case x ()
+      [ (_ syns syn-low syn-high)
+        #'(let search ([left 0] [right (fx1- (synapses-length syns))])
+            (if (fx>? left right) #f
+              (let* ( [mid (fxdiv (fx+ left right) 2)]
+                      [synapse (synapses-ref syns mid)]) 
+                (cond 
+                  [ (fx<? synapse  syn-low) (search (fx1+ mid) right) ]
+                  [ (fx<? syn-high synapse) (search left (fx1- mid))  ]
+                  [else synapse])))) ])))
 
 ;; --- Segments ---
                                                                                             ;

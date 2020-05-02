@@ -21,8 +21,6 @@
 (library (HTM-scheme HTM-scheme algorithms htm_prelude)
                                                                                             ;
 (export
-  add1
-  make-list
   build-list
   take
   list-average
@@ -50,8 +48,6 @@
   vector->bitwise
   bitwise-span
   bitwise->list
-  random-seed!
-  random
   vector-sample
   fxsearch
   key-word-args
@@ -62,14 +58,14 @@
   in1d
   include-by-mask
   exclude-by-mask
-  thread-limit!
+  thread-limit
   threaded-vector-for-each
   cost-center-1
   cost-center-2
   define-memoized)
                                                                                             ;
 (import
-  (except (chezscheme) add1 make-list random reset))
+  (chezscheme))
 
 ;; -- Types --
 ;; Boolean, Number, Integer, Fixnum, (Listof X), (Vectorof X) ... = Scheme types
@@ -81,18 +77,11 @@
 ;; Bits     = Integer (Bignum) interpreted bitwise
 ;; KWarg    = Pair (key . value)
 
-(define (add1 n)                         ;; Fixnum -> Fixnum
-  (fx+ 1 n))
-                                                                                            ;
-(define (make-list n x)                  ;; Nat X -> (listof X)
-  ;; produce list of n x's
-  (vector->list (make-vector n x)))
-                                                                                            ;
 (define (build-list n proc)              ;; Nat (Nat -> X) -> (listof X)
   ;; produce list of n X's by applying proc to 0..n-1
   (let loop [ (i 0) (xs (list))]
     (cond [(fx=? i n) (reverse! xs)]
-          [else (loop (add1 i) (cons (proc i) xs))])))
+          [else (loop (fx1+ i) (cons (proc i) xs))])))
                                                                                             ;
 (define (take n xs)                      ;; Nat (listof X) -> (listof X)
   ;; produce first n elements of xs
@@ -205,7 +194,7 @@
                                                                                             ;
 (define (fx3* x y)                       ;; Fixnum3 Fixnum3 -> Fixnum3
   ;; produce product
-  (div (+ (* x y) (div fx3 2)) fx3))
+  (fxdiv (fx+ (fx* x y) (fxdiv fx3 2)) fx3))
                                                                                             ;
 (define (vector-extend vec)              ;; (vectorof X) -> (vectorof X)
   ;; increase the size of vec
@@ -218,25 +207,25 @@
   ;; produce copy of first n elements of vec, or copy of vec if n > length
   (let* ( (size (fxmin n (vector-length vec)))
           (result (make-vector size)))
-    (do ((i 0 (add1 i))) ((fx=? i size) result)
+    (do ((i 0 (fx1+ i))) ((fx=? i size) result)
       (vector-set! result i (vector-ref vec i)))))
                                                                                             ;
 (define (vector-count proc vec)          ;; (X -> Boolean) (vectorof X) -> Nat
   ;; produce count of elements of vec for which (proc elt) is not false
   (vector-fold-left 
-    (lambda (acc elt) (if (proc elt) (add1 acc) acc))
+    (lambda (acc elt) (if (proc elt) (fx1+ acc) acc))
     0 vec))
                                                                                             ;
 (define (vector-indices vec)             ;; (vectorof X) -> (listof Nat)
   ;; produce list of indices for which vector element is not false
-  (do [ (i 0 (add1 i)) 
+  (do [ (i 0 (fx1+ i)) 
         (l (list) (if (vector-ref vec i) (cons i l) l))]
       ((fx=? i (vector-length vec)) l)))
                                                                                             ;
 (define (vector-refs vec refs)           ;; (vectorof X) (vectorof Nat) -> (vectorof X)
   ;; produce vector of selected elements of vec indexed by refs
   (let ((vrefs (make-vector (vector-length refs))))
-    (do ((i 0 (add1 i))) ((fx=? i (vector-length refs)) vrefs)
+    (do ((i 0 (fx1+ i))) ((fx=? i (vector-length refs)) vrefs)
       (vector-set! vrefs i (vector-ref vec (vector-ref refs i))))))
                                                                                             ;
 (define (list->bitwise ns)               ;; (listof Nat) -> Bits
@@ -271,22 +260,6 @@
         (loop (bitwise-copy-bit bits b 0) (cons b result)))))
   )
                                                                                             ;
-  (define random-state 48271)
-                                                                                            ;
-(define (random-seed! n)                 ;; Nat ->
-  (set! random-state n))
-                                                                                            ;
-(define (random n)                       ;; Fixnum|Flonum -> Fixnum|Flonum
-  ;; produce random Fixnum in range 0..n-1, or Flonum in range [0..n>
-  ;; *** (fixnum-width) > 48 only ***
-  ;; alternative?: (set! random-state (mod (+ 1013904223 (* random-state 1664525)) 4294967296))
-  (let ((Lehmer-modulus   2147483647)
-        (Lehmer-multiplier     48271))
-    (set! random-state (fxmod (fx* random-state Lehmer-multiplier) Lehmer-modulus))
-    (if (fixnum? n)
-      (fxmod random-state n)
-      (fl* n (fl/ (fixnum->flonum random-state) 2147483647.0)))))
-                                                                                            ;
 (define (vector-sample source size)      ;; (vectorof X) Nat -> (vectorof X)
   ;; produce random selection of length size from source (using Durstenfeld shuffle)
   (let* ( (source-length (vector-length source))
@@ -297,7 +270,7 @@
            (vector (vector-ref source (random source-length)))]
           [else
             (let ((vec (vector-take source-length source)))
-              (do ((n 0 (add1 n))) ((fx=? n shuffle) (vector-take size vec))
+              (do ((n 0 (fx1+ n))) ((fx=? n shuffle) (vector-take size vec))
                 (let* ((r (fx+ n (random (fx- source-length n))))
                        (t (vector-ref vec r)))
                   (vector-set! vec r (vector-ref vec n))
@@ -309,7 +282,7 @@
       (let* ( (mid (fxdiv (fx+ left right) 2))
               (element (vector-ref v mid))) 
         (cond 
-          [ (fx<? element target) (search (add1 mid) right) ]
+          [ (fx<? element target) (search (fx1+ mid) right) ]
           [ (fx<? target element) (search left (fx- mid 1)) ]
           [else element])))))
                                                                                             ;
@@ -327,7 +300,8 @@
   (display " starting     \r")
   (flush-output-port (current-output-port))
   (let* ( [start-t0 (cpu-time)]
-          [stride   (expt 10 (exact (ceiling (log (max 1 (log (fxmax 1 n)))))))])
+          [stride   #;(expt 10 (exact (ceiling (log (max 1 (log (fxmax 1 n)))))))
+                    (isqrt (fxmax 1 n))])
     (do ((step 0 (fx+ step stride))) ((fx>=? step n))
       (let* ([limit   (fxmin n (fx+ step stride))]
              [step-t0 (cpu-time)])
@@ -404,37 +378,41 @@
         (bitwise->list
           (bitwise-bit-field (bitwise-not mask) 0 (length xs)))))))
                                                                                             ;
-  (define thread-limit 7)                ;; #hyperthreads-1 for best wall time, #cores for best cpu?
-                                                                                            ;
-(define (thread-limit! n)                ;; Nat ->
-  (set! thread-limit n))
-                                                                                            ;
-(define (threaded-vector-for-each f . vs) ;; (X ... -> ) (vectorof X) ... ->
+(define thread-limit 4)                  ;; #hyperthreads-1 for best wall time, #cores for best cpu?
+                                                                                            ;                                                                                            ;
+(define seed (make-thread-parameter 4294967295))
+
+(define (threaded-vector-for-each ifge f . vs);; (X ... -> ) (vectorof X) ... ->
   ;; in a new thread for each, apply f to elements of vs, return when all finished
-  (let ((todo      (vector-length (car vs)))
-        (threads   0)
-        (mutex     (make-mutex))
-        (finished  (make-condition))
-        (all-done  (make-condition))
-        (thread-xs (make-thread-parameter #f)))
-    (apply vector-for-each (lambda xs
-        (with-mutex mutex
-          (when (fx>=? threads thread-limit)
-            (condition-wait finished mutex))
-          (set! threads (add1 threads)))
-        (thread-xs xs)
-        (fork-thread (lambda () 
-            (apply f (thread-xs))
+  (let ([todo (vector-length (car vs))])
+    (if (fx<? todo ifge)                 ;; (fork if vector-length >= ifge)
+      (apply vector-for-each (lambda xs  ;; [could be (apply vector-for-each f vs)]
+          (apply f xs))
+        vs)
+      (let ([threads  0]
+            [mutex   (make-mutex)]
+            [free    (make-condition)]
+            [done    (make-condition)])
+        (apply vector-for-each (lambda xs
             (with-mutex mutex
-              (set! threads (fx- threads 1))
-              (condition-signal finished)
-              (set! todo (- todo 1))
-              (when (zero? todo)
-                (condition-signal all-done))))))
-      vs)
-    (with-mutex mutex
-      (unless (zero? todo)
-        (condition-wait all-done mutex)))))
+              (when (fx>=? threads thread-limit)
+                (condition-wait free mutex))
+              (set! threads (fx1+ threads)))
+            (seed (random 4294967295))
+            (fork-thread (lambda ()
+                    (random-seed (seed))               ;; child thread
+                    (apply f xs)                       ;;
+                    (with-mutex mutex                  ;;
+                      (set! todo (fx1- todo))          ;;
+                      (when (zero? todo)               ;;
+                        (condition-signal done))       ;;
+                      (set! threads (fx1- threads))    ;;
+                      (condition-signal free)))        ;;
+              ))
+          vs)
+        (with-mutex mutex
+          (unless (zero? todo)
+            (condition-wait done mutex)))))))
                                                                                             ;
 (define cost-center-1 (make-cost-center))
 (define cost-center-2 (make-cost-center))
@@ -530,7 +508,7 @@
           ( [vector-take 2 '#(0 1 2 3)] '#(0 1)    )
           ( [vector-take 5 '#(0 1 2 3)] '#(0 1 2 3))]
   [expect ( [vector-count zero? '#(0 1 2 0 3)] 2 )
-          ( [vector-count not   '#(#t 0 add1)] 0 )]
+          ( [vector-count not   '#(#t 0 fx1+)] 0 )]
   [expect ( [vector-indices '#(#f #f #f)] '()    )
           ( [vector-indices '#(#t #f  0)] '(2 0) )]
   [expect ( [vector-refs '#(0 11 22 33 44) '#(0 2 4)] '#(0 22 44) )]
@@ -549,5 +527,11 @@
   [expect ( [in1d            '(1 2 3 4) '(1 3 5)]  #b101 )]
   [expect ( [include-by-mask '(1 2 3 4)  #b1101]  '(1 3 4))]
   [expect ( [exclude-by-mask '(1 2 3 4)  #b1101]  '(2))]
+  
+  #;[let ([xs (make-vector 3 #f)])
+    [expect ( [begin [threaded-vector-for-each 2 (lambda (x ix)
+                          (vector-set! xs ix (+ x 1)))
+                        '#(1 2 3) '#(0 1 2)]
+                      xs]   '#(2 3 4))]]
   
 )

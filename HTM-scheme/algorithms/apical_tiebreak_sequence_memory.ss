@@ -1,4 +1,4 @@
-#!r6rs
+#!chezscheme
 
 ;; === HTM-scheme Apical Tiebreak Sequence Memory Copyright 2019 Roger Turner. ===
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -37,11 +37,11 @@
     (attm:get-active-cells           get-active-cells)
     (attm:get-predicted-cells        get-next-predicted-cells)
     (attm:get-predicted-active-cells get-predicted-active-cells)
-    (attm:tm-n-segments-created      get-n-segments-created)
-    (attm:tm-n-synapses-created      get-n-synapses-created)))
+    (attm:number-of-basal-segments      get-n-segments-created)
+    (attm:number-of-basal-synapses      get-n-synapses-created)))
                                                                                             ;
 (import 
-  (rnrs)
+  (except (chezscheme) reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))
@@ -56,8 +56,8 @@
     (lambda (pargs->new)                 ;; (listof KWarg) -> TM
       (lambda (kwargs)
         (apply (pargs->new (append
-                            `([basal-input-size . ,(* (cdr (assq 'column-count kwargs))
-                                                      (cdr (assq 'cells-per-column kwargs)))])
+                            `([basal-input-size . ,(fx* (cdr (assq 'column-count kwargs))
+                                                        (cdr (assq 'cells-per-column kwargs)))])
                              kwargs))
           (key-word-args kwargs atsm-defaults))))))
                                                                                            ;

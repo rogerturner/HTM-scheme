@@ -37,11 +37,11 @@
     (attm:get-active-cells           get-active-cells)
     (attm:get-predicted-cells        get-predicted-cells)
     (attm:get-predicted-active-cells get-predicted-active-cells)
-    (attm:tm-n-segments-created      get-n-segments-created)
-    (attm:tm-n-synapses-created      get-n-synapses-created)))
+    (attm:number-of-basal-segments      get-n-segments-created)
+    (attm:number-of-basal-synapses      get-n-synapses-created)))
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list random reset)
+  (except (chezscheme) reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))

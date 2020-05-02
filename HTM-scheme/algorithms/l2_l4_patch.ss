@@ -74,7 +74,7 @@ L2L4 cortical column:
     ))
                                                                                             ;
 (import
-  (except (chezscheme) add1 make-list random reset)
+  (except (chezscheme) reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms layer4)        l4:)
@@ -87,12 +87,20 @@ L2L4 cortical column:
     (lambda (new)
       (lambda (ncc cc ncl4pop nib bis cp-overrides attm-overrides)
         (let* (
-            (l2-cell-count (int<- (* 3 cc ncl4pop)))
-            (l2s (build-vector ncc (lambda _ 
-                    (l2:make-cp (append `([cell-count . ,l2-cell-count]) cp-overrides)))))
-            (ais (l2:number-of-cells (vector-ref l2s 0)))
-            (l4s (build-vector ncc (lambda _ 
-                    (l4:make-l4 cc ncl4pop nib bis ais attm-overrides)))))
+            (l2s      (build-vector ncc (lambda _ 
+                        (l2:make-cp (append `(
+                            [seed . ,(random 4294967295)]
+                            [cell-count . ,(* 30 cc)])
+                          cp-overrides)))))
+            (ais      (l2:number-of-cells (vector-ref l2s 0)))
+            (l4s      (build-vector ncc (lambda _ 
+                        (l4:make-l4 cc ncl4pop nib bis ais attm-overrides))))
+            (same-col (lambda (acx ix)
+                        (fx=? (fxdiv acx 30)
+                              (fxdiv (fxmod ix (l4:l4-pre-stride (vector-ref l4s 0))) ncl4pop)))))
+          (vector-for-each (lambda (l2)
+              (l2:set-same-col l2 same-col))
+            l2s)
           (new l2s l4s))))))
                                                                                             ;
 (define adjacent-ccs (vector
@@ -124,7 +132,8 @@ L2L4 cortical column:
       (lambda (acc other-layer other-ccx)
         (let ((other-prev-active (vector-ref prev other-ccx)))
           (if (eq? layer other-layer)  acc
-            (cond
+            (cons other-prev-active acc) ;; lateral connections to all other columns
+            #;(cond                        ;; short-range lateral only (disabled)
               [(fx=? ncc 7)                ;; 7 ccs: connect to adjacent cc only
                 (if (or (zero? ccx) (zero? other-ccx))
                   (cons other-prev-active acc)
@@ -140,29 +149,30 @@ L2L4 cortical column:
       '()
       ls (indexes ls))))
                                                                                             ;
-(define (compute patch features locations learn)
+(define (compute patch features locations learn ifge)
   ;; run one timestep of patch
   (let ((l2-prev-actives
-          (vector-map (lambda (l2)
-              (append                    ;; copy *elements* for next step
-                (l2:get-active-cells l2) '()))
+          (vector-map (lambda (l2)       ;; copy *elements* for next step
+              (fold-right cons '() (l2:get-active-cells l2)))
             (patch-l2s patch))))
-    (threaded-vector-for-each              ;; thread per cortical column
-      (lambda (l2 l4 feature location ccx)
-        (let-values ([(l4-active-cells l4-predicted-cells bursting-columns)
-            (l4:compute l4 
-              feature                      ;; feedforward input
-              location                     ;; basal input
-              (l2:get-active-cells l2)     ;; apical input 
-              learn)])
-          (when (null? bursting-columns)
-            (l2:compute l2
-              l4-active-cells              ;; feedforward input
-              (lateral-inputs ccx (patch-l2s patch) l2-prev-actives)
-              l4-predicted-cells           ;; feedforward growth candidates
-              learn
-              l4-predicted-cells))))       ;; predicted input
-      (patch-l2s patch) (patch-l4s patch) features locations (indexes features))))
+    (threaded-vector-for-each ifge       ;; thread per cortical column
+      (lambda (l4 feature location ccx)
+        (l4:compute l4 
+          feature                        ;; feedforward input
+          location                       ;; basal input
+          (vector-ref l2-prev-actives ccx) ;; apical input
+          learn))
+      (patch-l4s patch) features locations (indexes features))
+    (threaded-vector-for-each ifge          
+      (lambda (l2 l4 ccx)
+        (l2:compute l2
+          (l4:l4-active-cells l4)        ;; feedforward input
+          (lateral-inputs ccx (patch-l2s patch) l2-prev-actives)
+          (l4:l4-predicted-cells l4)     ;; feedforward growth candidates
+          learn
+          (l4:l4-predicted-cells l4)))   ;; predicted input
+      (patch-l2s patch) (patch-l4s patch) (indexes (patch-l2s patch)))
+    ))
                                                                                             ;
 (define (reset patch)
   (vector-for-each  l2:reset  (patch-l2s patch))

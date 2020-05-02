@@ -20,7 +20,7 @@
 
   ;; Translated from NuPIC coordinate.py, see comments there for more info.
   #|
-  Given a coordinate in a 2-dimensional space, and a radius around
+  Given an integer coordinate in a 2-dimensional space, and a radius around
   that coordinate, the Coordinate Encoder returns an SDR representation
   of that position. It uses the following algorithm:
 
@@ -33,8 +33,7 @@
   4. For each of these W coordinates, use a uniform hash function to
      deterministically map it to one of the bits in the SDR. Make this bit
      active.
-  5. This results in a final SDR with exactly W bits active (barring chance hash
-     collisions).
+  5. This results in a final SDR with exactly W bits active.
   |#
 
 (library (HTM-scheme HTM-scheme encoders coordinate)
@@ -50,23 +49,49 @@
   encode)
                                                                                             ;
 (import 
-  (except (chezscheme) add1 make-list)
-          (HTM-scheme HTM-scheme algorithms htm_prelude)
-          (HTM-scheme HTM-scheme algorithms htm_concept))
+  (chezscheme)
+  (HTM-scheme HTM-scheme algorithms htm_prelude)
+  (HTM-scheme HTM-scheme algorithms htm_concept))
 
 ;; Types
 ;; Coord    Scheme Complex with Fixnum real and imag parts
 
 (define-record-type ce                   ;; CoordinateEncoder [CE]
   (fields
-    (mutable w)                                    ;; Nat: number of 1 bits in SDR
-    (mutable n)                                    ;; Nat: size of SDR
+    (mutable w)                          ;; Nat: number of 1 bits in SDR
+    (mutable n)                          ;; Nat: size of SDR
     (mutable radius)                     ;; Nat: 
     ))
 
-(define (encode ce c)                    ;; CE Coord -> SDR
-  ;; produce SDR for c using ce
-  (let* ( [neighbors (_neighbors c (ce-radius ce))]
+(define (encode ce centre)               ;; CE Coord -> SDR
+  ;; produce SDR for centre using ce
+#;> (define (_order-for-coord c)         ;; Coord -> Nat
+      ;; produce order for c 
+      (_hash-coordinate c)
+      #;(let* ([xd (fx- (real-part c) (real-part centre))] ;; gaussian weight by distance from centre?
+             [yd (fx- (imag-part c) (imag-part centre))]
+             [d  (exact (round (sqrt (fx+ (fx* xd xd) (fx* yd yd)))))]
+             [m  (if (fx>? d 9) 1
+                   (case d
+                     [(9) 2]
+                     [(8) 4]
+                     [(7) 7]
+                     [(6) 10]
+                     [(5) 14]
+                     [(4) 18]
+                     [(3) 21]
+                     [(2) 23]
+                     [(1) 24]
+                     [(0) 25]))])
+        (fx* m (_hash-coordinate c))))
+#;> (define (_top-coords neighborhood w) ;; (Vectorof Coord) Nat -> (Vectorof Coord)
+      ;; produce w top elements of neighborhood by order
+      (let* ( [orders  (vector-map _order-for-coord neighborhood)]
+              [indices (vector-take w (vector-sort (lambda (o1 o2)
+                            (fx>? (vector-ref orders o1) (vector-ref orders o2)))
+                          (indexes neighborhood)))])
+      (vector-refs neighborhood indices)))
+  (let* ( [neighbors (_neighbors centre (ce-radius ce))]
           [winners   (_top-coords neighbors (ce-w ce))]
           [indices   (vector-map (lambda (c)
                           (_bit-for-coord c (ce-n ce)))
@@ -102,38 +127,33 @@
                   [ else ri])))
             result))))))
                                                                                             ;
-(define (_top-coords neighborhood w)     ;; (Vectorof Coord) Nat -> (Vectorof Coord)
-  ;; produce w top elements of neighborhood by order
-  (let* ( [orders  (vector-map _order-for-coord neighborhood)]
-          [indices (vector-take w (vector-sort (lambda (o1 o2)
-                        (fx>? (vector-ref orders o1) (vector-ref orders o2)))
-                      (indexes neighborhood)))])
-    (vector-refs neighborhood indices)))
-                                                                                            ;
 (define hashes                           ;; (Vectorof Nat)
-  ;; random permutation of 0..64k
-  (vector-sample (build-vector (* 256 256) id) (* 256 256)))
+  ;; random permutation of 0..256k
+  (let* ( [k256 (* 512 512)]
+          [v    (vector-sample (build-vector k256 id) k256)]
+          [h    (make-bytevector (* 4 k256))])
+    (do ((i (fx1- k256) (fx1- i))) ((fxnegative? i) h)
+      (bytevector-u32-native-set! h (fx* i 4) (vector-ref v i)))))
                                                                                             ;
-(define (spread8 x)                      ;; Fixnum -> Fixnum
-  ;; produce 16 bits from 8 low-order bits of x: bit 0->0, 1->2, ...7->14
+(define (spread9 x)                      ;; Fixnum -> Fixnum
+  ;; produce 18 bits from 9 low-order bits of x: bit 0->0, 1->2, ...8->16
   (let* (
-      [x (fxand (fxior (fxarithmetic-shift-left x 4) x) #x0F0F)]
-      [x (fxand (fxior (fxarithmetic-shift-left x 2) x) #x3333)]
-      [x (fxand (fxior (fxarithmetic-shift-left x 1) x) #x5555)])
+      [x (fxior (fxarithmetic-shift-left (fxand x #xFF00) 8) (fxand x #x00FF))]
+      [x (fxand (fxior (fxarithmetic-shift-left x 4) x) #x0F0F0F0F)]
+      [x (fxand (fxior (fxarithmetic-shift-left x 2) x) #x33333333)]
+      [x (fxand (fxior (fxarithmetic-shift-left x 1) x) #x55555555)])
     x ))
                                                                                             ;
 (define (_hash-coordinate c)             ;; Coord -> Nat
-  ;; produce uniformly distributed (?) hash of c (8 bit coords)
-  (vector-ref hashes (fxior (spread8 (real-part c))
-      (fxreverse-bit-field (spread8 (imag-part c)) 0 16))))
-                                                                                              ;
-(define (_order-for-coord c)             ;; Coord -> Nat
-  ;; produce order for c
-  (_hash-coordinate c))
+  ;; produce uniformly distributed (?) hash of c (9 bit coords)
+  (bytevector-u32-native-ref hashes 
+      (fx* 4 (fxand #x3FFFF (fxior
+          (spread9 (real-part c))
+          (fxarithmetic-shift-left (spread9 (imag-part c)) 1))))))
                                                                                             ;
 (define (_bit-for-coord c n)             ;; Coord Nat -> Nat
   ;; produce value in [0..n> for c
-  (random-seed (fx* 48271 (_hash-coordinate c)))
+  (random-seed (fx* 997 (_hash-coordinate c)))
   (random n))
 
 ;; Smoke tests

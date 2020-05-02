@@ -20,9 +20,8 @@
   
 Layer4 consists of ss4(L4), ss4(L23), and p4 populations, each modelled with the
 Numenta apical_tiebreak_temporal_memory algorithm (apical input to p4 cells only).
-The main connections are shown below (see Figure 2 in Izhikevich & Edelman 2008 
-"Large-scale model of mammalian thalamocortical systems" 10.1073􏰁/pnas.0712231105,
-and Figure 9 in their Supporting Information)
+The main connections are shown below (see figure 2 in Izhikevich & Edelman 2008 
+"Large-scale model of mammalian thalamocortical systems" 10.1073/pnas.0712231105)
 
                ^      ^       v
                |      |       |
@@ -45,12 +44,18 @@ and Figure 9 in their Supporting Information)
       ^                   ^   \
     location        feature   minicolumn: any depolarized active cell inhibits others
 
+Cells in each population receive input from multiple presynaptic populations (see
+figures 8 and 9 in the Supporting Information for Izhikevich & Edelman 2008).
+
     |#
 
 (library (HTM-scheme HTM-scheme algorithms layer4)
                                                                                             ;
 (export
   l4-pop
+  l4-active-cells
+  l4-predicted-cells
+  l4-pre-stride
   make-l4
   compute
   reset
@@ -64,7 +69,7 @@ and Figure 9 in their Supporting Information)
   number-of-apical-segments)
                                                                                             ;
 (import
-  (except (chezscheme) add1 make-list random reset)
+  (except (chezscheme) reset)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms apical_tiebreak_temporal_memory) attm:))
@@ -75,31 +80,36 @@ and Figure 9 in their Supporting Information)
   ss4l4                                  ;; ATTM ss4, axon -> L4
   ss4l23                                 ;; ATTM ss4, axon -> L2/3
   p4                                     ;; ATTM p4
-  offset-stride)                         ;; Nat
+  (mutable active-cells)
+  (mutable predicted-cells)
+  pre-stride)                            ;; Nat
   (protocol
     (lambda (new)
       (lambda (cc ncl4pop nib bis ais attm-overrides)
         (let* (
-            (offset-stride (fxmax bis ais (fx* cc ncl4pop)))
+            (pre-stride (fxmax bis ais (fx* cc ncl4pop)))
             (dimensions `(
               [column-count      . ,cc]
               [cells-per-column  . ,ncl4pop]
-              [sample-size       . ,(int<- (* 1.5 nib))]
-              [basal-input-size  . ,(fx* 5 offset-stride)]
-              [apical-input-size . ,(fx* 5 offset-stride)])))
+              [sample-size       . ,(fx* 5 nib)]
+              [basal-input-size  . ,(fx* 5 pre-stride)]
+              [apical-input-size . ,(fx* 5 pre-stride)])))
           (new
+            (attm:make-tm (append 
+              '([has-recurrent-connections . #t]) dimensions attm-overrides))
             (attm:make-tm (append dimensions attm-overrides))
             (attm:make-tm (append dimensions attm-overrides))
-            (attm:make-tm (append dimensions attm-overrides))
-            offset-stride))))))
+            '()
+            '()
+            pre-stride))))))
                                                                                             ;
 (define (compute l feature location      ;; L4 SDR SDR SDR Boolean -> SDR SDR SDR
           apical-input learn)
-  ;; step layer l and return active and predicted L2 projecting cells and bursting columns
+  ;; step layer l and return active non-bursting and predicted L2 projecting cells and bursting columns
   (define (offset inputs source)         ;; SDR Nat -> SDR
-    ;; produce inputs with elements offset by (* source offset-stride)
+    ;; produce inputs with elements offset by (* source pre-stride)
     (if (zero? source)  inputs
-      (let ((stride (fx* source (l4-offset-stride l))))
+      (let ((stride (fx* source (l4-pre-stride l))))
         (map (lambda (e) (fx+ e stride))
           inputs))))
   (define (thin inputs n)                ;; SDR Nat -> SDR
@@ -135,15 +145,19 @@ and Figure 9 in their Supporting Information)
         (p4-predicted-cols      (attm:cols-from-cells (l4-p4 l) p4-predicted-cells))
         (bursting-columns       (setdiff1d feature
                                     (union1d ss4l4-predicted-cols 
-                                      (union1d ss4l23-predicted-cols p4-predicted-cols)))))
+                                      (union1d ss4l23-predicted-cols p4-predicted-cols))))
+        (active-non-bursters    (lambda (pop)
+                                  (setdiff1d 
+                                    (attm:get-active-cells (pop l))
+                                    (attm:get-all-cells-in-columns (pop l) bursting-columns)))))
       (attm:activate-cells (l4-ss4l4 l)
         feature                          ;; feedforward-input
         ->ss4l4-basal                    ;; basal-reinforce-candidates
         '()                              ;; apical-reinforce-candidates
-        (append (if (zero? (random 4))   ;; basal-growth-candidates
-                    (thin location 3)    ;; (full location input doesn't work here?)
-                    (thin location 4)) 
-                (offset (attm:get-winner-cells (l4-ss4l4 l)) 2))
+        (append (thin location 5)        ;; basal-growth-candidates
+                (offset (thin (attm:get-winner-cells (l4-ss4l4 l))  2) 2)
+                (offset (thin (attm:get-winner-cells (l4-ss4l23 l)) 8) 3)
+                (offset (thin (attm:get-winner-cells (l4-p4 l))     7) 4))
         '()                              ;; apical-growth-candidates
         learn 
         bursting-columns)
@@ -151,27 +165,33 @@ and Figure 9 in their Supporting Information)
         feature                          ;; feedforward-input
         ->l4-basal                       ;; basal-reinforce-candidates
         '()                              ;; apical-reinforce-candidates
-        (append location                 ;; basal-growth-candidates
-                (offset (attm:get-winner-cells (l4-ss4l23 l)) 3))
-        '()                              ;; apical-growth-candidates
+        (append (thin location 1)        ;; basal-growth-candidates
+                (offset (thin (attm:get-winner-cells (l4-ss4l4 l))  2) 2)
+                (offset (thin (attm:get-winner-cells (l4-ss4l23 l)) 8) 3)
+                (offset (thin (attm:get-winner-cells (l4-p4 l))     7) 4))
+      '()                              ;; apical-growth-candidates
         learn 
         bursting-columns)
       (attm:activate-cells (l4-p4 l)
         feature                          ;; feedforward-input
         ->l4-basal                       ;; basal-reinforce-candidates
         ->p4-apical                      ;; apical-reinforce-candidates
-        (append location                 ;; basal-growth-candidates
-                (offset (attm:get-winner-cells (l4-p4 l)) 4))
+        (append (thin location 1)        ;; basal-growth-candidates
+                (offset (thin (attm:get-winner-cells (l4-ss4l4 l))  2) 2)
+                (offset (thin (attm:get-winner-cells (l4-ss4l23 l)) 8) 3)
+                (offset (thin (attm:get-winner-cells (l4-p4 l))     7) 4))
         ->p4-apical                      ;; apical-growth-candidates
         learn 
         bursting-columns)
-      (values
-        (append
-          (offset (attm:get-active-cells (l4-ss4l23 l)) 0)
-          (offset (attm:get-active-cells (l4-p4 l)) 1))
+      (l4-active-cells-set! l
+        (append (offset (active-non-bursters l4-ss4l23) 0) (offset (active-non-bursters l4-p4) 1)))
+      (l4-predicted-cells-set! l
+        (append (offset ss4l23-predicted-cells 0) (offset p4-predicted-cells 1)))
+      #;(values
+        (append (offset (active-non-bursters l4-ss4l23) 0) (offset (active-non-bursters l4-p4) 1))
         (append (offset ss4l23-predicted-cells 0) (offset p4-predicted-cells 1))
         bursting-columns))))
-                                                                                              ;
+                                                                                            ;
 (define (reset l)                        ;; L4 ->
   (attm:reset (l4-ss4l4 l))
   (attm:reset (l4-ss4l23 l))
@@ -181,7 +201,7 @@ and Figure 9 in their Supporting Information)
   (attm:reset (l4-ss4l4 l)))
                                                                                             ;
 (define (get f l pop)                    ;; (ATTM -> X) L4 L4Pop -> X
-  ;; access f cells of sub-population pop of layer
+  ;; access f cells of sub-population pop of layer l
   (cond
     [ (enum-set-member? 'ss4l4 pop)  (f (l4-ss4l4  l)) ]
     [ (enum-set-member? 'ss4l23 pop) (f (l4-ss4l23 l)) ]

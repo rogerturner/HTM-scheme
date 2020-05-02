@@ -96,7 +96,7 @@ creating a cleaner implementation." [Numenta description]
     # which can become active, forcing decay even if we are below quota.
     # Activate groups of previously active cells by order of their lateral
     # support until we either meet quota or run out of cells.
-    (on first touch activate all with feedforward support):
+    # (on first touch activate all with feedforward support):
     # If we haven't filled the sdrSize quorum, add cells that have feedforward
     # support and no lateral support.
     # Inhibit cells proportionally to the number of cells that have already
@@ -113,12 +113,13 @@ creating a cleaner implementation." [Numenta description]
 (export
   make-cp
   compute
-  reset
+  reset  
   (rename
-    (cp-input-width  number-of-inputs)
-    (cp-cell-count   number-of-cells)
-    (cp-sdr-size     get-sdr-size)
-    (cp-active-cells get-active-cells))
+    (cp-same-col-set! set-same-col)
+    (cp-input-width   number-of-inputs)
+    (cp-cell-count    number-of-cells)
+    (cp-sdr-size      get-sdr-size)
+    (cp-active-cells  get-active-cells))
   (rename
     (num-connected-proximal-synapses test:num-connected-proximal-synapses)
     (number-of-proximal-synapses     test:number-of-proximal-synapses)
@@ -131,8 +132,8 @@ creating a cleaner implementation." [Numenta description]
     (cp-max-sdr-size                 test:cp-max-sdr-size)
     (cp-proximal-permanences         test:cp-proximal-permanences)))
                                                                                             ;
-(import 
-  (except (chezscheme) add1 make-list random reset)
+(import
+  (except (chezscheme) reset)
   (HTM-scheme HTM-scheme algorithms htm_prelude)
   (HTM-scheme HTM-scheme algorithms htm_concept))
 
@@ -160,29 +161,30 @@ creating a cleaner implementation." [Numenta description]
     sample-size-distal
     activation-threshold-distal
     connected-permanence-distal
-    inertia-factor
+    inertia-factor                       ;; Fixnum3
     seed
     (mutable active-cells)
     (mutable proximal-permanences)       ;; CellVecOf Segment
     (mutable internal-distal-permanences);; CellVecOf Segment
     (mutable distal-permanences)         ;; {CellVecOf Segment}
-    use-inertia)
+    use-inertia
+    (mutable same-col))                  ;; (CellX InpX -> Bool)
   (protocol
     (lambda (new)
-      (lambda (kwargs)                   ;; (listof KWarg) -> CP
+      (lambda (kwargs)                   ;; {KWarg} -> CP
         (let ((cp (apply new (key-word-args kwargs cp-defaults))))
           (when (zero? (cp-max-sdr-size cp))
             (cp-max-sdr-size-set! cp (cp-sdr-size cp)))
           (when (zero? (cp-min-sdr-size cp))
             (cp-min-sdr-size-set! cp (cp-sdr-size cp)))
-          (random-seed! (cp-seed cp))
+          (random-seed (cp-seed cp))
           (cp-proximal-permanences-set! cp
             (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))
           (cp-internal-distal-permanences-set! cp
             (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))
           ;; (distal permanences are allocated when lateral inputs known)
           cp)))))
-                                                                                           ;
+                                                                                            ;
 (define cp-defaults `(                   ;; (listof KWarg)
     [input-width                    . 0]
     [lateral-input-widths           . ()]
@@ -193,42 +195,47 @@ creating a cleaner implementation." [Numenta description]
     [min-sdr-size                   . 0]
     [syn-perm-proximal-inc          . ,(perm 0.1)]
     [syn-perm-proximal-dec          . ,(perm 0.001)]
-    [initial-proximal-permanence    . ,(perm #;.51 0.6)]
+    [initial-proximal-permanence    . ,(perm 0.6)]
     [sample-size-proximal           . 20]
     [min-threshold-proximal         . 10]
-    [connected-permanence-proximal  . ,(perm #;.6 0.50)]
+    [connected-permanence-proximal  . ,(perm 0.50)]
     [predicted-inhibition-threshold . 20]
     [syn-perm-distal-inc            . ,(perm 0.1)]
     [syn-perm-distal-dec            . ,(perm 0.001)]
-    [initial-distal-permanence      . ,(perm #;.51 0.6)]
+    [initial-distal-permanence      . ,(perm 0.6)]
     [sample-size-distal             . 20]
     [activation-threshold-distal    . 13]
-    [connected-permanence-distal    . ,(perm #;.6 0.50)]
-    [inertia-factor                 . 1.]
+    [connected-permanence-distal    . ,(perm 0.50)]
+    [inertia-factor                 . ,(fx3<- 1.0)]
     [seed                           . 42]
     [active-cells                   . ()]
     [proximal-permanences           . #()]
     [internal-distal-permanences    . #()]
     [distal-permanences             . ()]
-    [use-inertia                    . #t]))
+    [use-inertia                    . #t]
+    [same-col                       . #;,(lambda _ #t)
+        ,(lambda (acx ix)
+            (fx=? (fxdiv acx 30)
+                  (fxdiv (fxmod ix 3000) 10)))]))
 
 ;; === Column Pooler algorithm ===
                                                                                             ;
 (define  compute                         ;; ...
   ;; run one time step of the column pooler algorithm
   (case-lambda
-#;> [(cp feedforward-input learn)        ;; CP {CellX} Boolean ->
+    [(cp feedforward-input learn)        ;; CP {CellX} Boolean ->
       (compute cp feedforward-input (list) (list) learn (list)) ]
                                                                                             ;
-#;> [(cp feedforward-input               ;; CP {CellX} {{CellX}} {CellX} Boolean ->
+    [(cp feedforward-input               ;; CP {CellX} {{CellX}} {CellX} Boolean ->
         lateral-inputs feedforward-growth-candidates learn)
       (compute cp feedforward-input lateral-inputs feedforward-growth-candidates learn (list)) ]
                                                                                             ;
-#;> [(cp feedforward-input               ;; CP {CellX} {{CellX}} {CellX} Boolean {CellX} ->
+    [(cp feedforward-input               ;; CP {CellX} {{CellX}} {CellX} Boolean {CellX} ->
         lateral-inputs feedforward-growth-candidates learn predicted-input)
       (when (fx<? (length (cp-distal-permanences cp)) (length lateral-inputs))
         (cp-distal-permanences-set! cp
-          (make-list (length lateral-inputs) (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))))
+          (make-list (length lateral-inputs) 
+                     (build-vector (cp-cell-count cp) (lambda _ (make-synapses 0))))))
       (let ((feedforward-growth-candidates
               (if (null? feedforward-growth-candidates) feedforward-input
                   feedforward-growth-candidates)))
@@ -261,7 +268,7 @@ creating a cleaner implementation." [Numenta description]
                                       feedforward-growth-candidates)
                                          ;; inference step
             (compute-inference-mode cp feedforward-input lateral-inputs)))) ] ))
-                                                                                           ;
+                                                                                            ;
 (define (compute-learning-mode cp        ;; CP {CellX} {{CellX}} {CellX} ->
           feedforward-input lateral-inputs feedforward-growth-candidates)
   ;; in learning mode, maintain prior activity or create random sdr for new object
@@ -273,24 +280,30 @@ creating a cleaner implementation." [Numenta description]
               (let ((try (random (cp-cell-count cp))))
                 (if (memv try xs)
                   (loop n xs)
-                  (loop (add1 n) (cons try xs))))])))
+                  (loop (fx1+ n) (cons try xs))))])))
   (let ((prev-active-cells (cp-active-cells cp)))
     (when (cond
-        [ (fx<? (length (cp-active-cells cp)) (cp-min-sdr-size cp))
+        [ (fx<? (length prev-active-cells) (cp-min-sdr-size cp))
             ;; not enough previously active cells: create a new sdr and learn on it
             (cp-active-cells-set! cp (new-sdr))
             #t ]
-        [ (fx>? (length (cp-active-cells cp)) (cp-max-sdr-size cp))
+        [ (fx>? (length prev-active-cells) (cp-max-sdr-size cp))
             ;; union of cells active: don't learn
             #f ]
         [ else #t ] )
       ;; do the actual learning
-      (when (positive? (length feedforward-input))
-        (learn! (cp-proximal-permanences cp)
-          (cp-active-cells cp) feedforward-input feedforward-growth-candidates
-          (cp-sample-size-proximal cp) (cp-initial-proximal-permanence cp)
-          (cp-syn-perm-proximal-inc cp) (cp-syn-perm-proximal-dec cp))
-        (do ( (i 0 (add1 i))             ;; external distal learning
+      (unless (null? feedforward-input)
+        (for-each                        ;; each active cell learns proximal connections
+          (lambda (ac-cellx)             ;; in its minicolumn only
+            (let ((this-col (lambda (ix)
+                              ((cp-same-col cp) ac-cellx ix))))
+              (learn! (cp-proximal-permanences cp)
+                (list ac-cellx)
+                (filter this-col feedforward-input) (filter this-col feedforward-growth-candidates)
+                (cp-sample-size-proximal cp) (cp-initial-proximal-permanence cp)
+                (cp-syn-perm-proximal-inc cp) (cp-syn-perm-proximal-dec cp))))
+          (cp-active-cells cp))
+        (do ( (i 0 (fx1+ i))             ;; external distal learning
               (lateral-input lateral-inputs (cdr lateral-input)))
             ((fx=? i (length lateral-inputs)))
           (learn! (list-ref (cp-distal-permanences cp) i)
@@ -343,16 +356,16 @@ creating a cleaner implementation." [Numenta description]
                             fx>=? overlaps (cp-activation-threshold-distal cp))))
       lateral-inputs (cp-distal-permanences cp))
     (let ((chosen-cells (list)))
-      (unless (zero? (length feedforward-supported-cells))
+      (unless (fxzero? (length feedforward-supported-cells))
         (let ((num-active-segs-for-ff-sup-cells
                 (list-of (vector-ref num-active-segments-by-cell x)
                          (x in feedforward-supported-cells))))
           (set! chosen-cells (extend-active chosen-cells  ;; exclude cells with 0 active segments
                                feedforward-supported-cells num-active-segs-for-ff-sup-cells #f))))
       (when (and (fx<? (length chosen-cells) (cp-sdr-size cp)) (cp-use-inertia cp))
-        (let* ( (prev-cells (setdiff1d prev-active-cells chosen-cells))
-                (inertial-cap (int<- (* (length prev-cells) (cp-inertia-factor cp)))))
-          (when (positive? inertial-cap)
+        (let* ( [prev-cells   (setdiff1d prev-active-cells chosen-cells)]
+                [inertial-cap (fxdiv (fx* (length prev-cells) (cp-inertia-factor cp)) fx3)])
+          (when (fxpositive? inertial-cap)
             (let* ( (num-active-segs-for-prev-cells 
                       (list-of (vector-ref num-active-segments-by-cell x)
                                (x in prev-cells)))
@@ -387,7 +400,7 @@ creating a cleaner implementation." [Numenta description]
         (fold-left
           (lambda (total synapse)
             (if (fx>=? (syn-perm synapse) threshold)
-              (add1 total)
+              (fx1+ total)
               total))
           total
           (synapses->list (vector-ref (cp-proximal-permanences cp) cellx))))
@@ -423,7 +436,7 @@ creating a cleaner implementation." [Numenta description]
       (fxpositive? (synapses-length seg)))
     (cp-internal-distal-permanences cp)))
                                                                                             ;
-(define (number-of-lateral-synapses cp)   ;; CP -> Nat
+(define (number-of-lateral-synapses cp)  ;; CP -> Nat
   (fold-left (lambda (total col)
       (+ total
         (vector-fold-left (lambda (total seg)
@@ -433,7 +446,7 @@ creating a cleaner implementation." [Numenta description]
     0
     (cp-distal-permanences cp)))
                                                                                             ;
-(define (number-of-lateral-segments cp)   ;; CP -> Nat
+(define (number-of-lateral-segments cp)  ;; CP -> Nat
   (fold-left (lambda (total col)
       (+ total
         (vector-count (lambda (seg)
@@ -452,7 +465,7 @@ creating a cleaner implementation." [Numenta description]
   ;; for each active cell, reinforce active synapses, punish inactive synapses,
   ;; and grow new synapses to input bits that the cell isn't already connected to
   (adapt-synapses! permanences active-cells active-input permanence-increment permanence-decrement)
-  (if (negative? sample-size)
+  (if (fxnegative? sample-size)
     (add-synapses! permanences active-cells active-input initial-permanence)
     (let ((max-new-by-cell (max-new-by-cell permanences active-cells active-input sample-size)))
       (grow-synapses! permanences active-cells growth-candidate-input max-new-by-cell initial-permanence))))
@@ -467,10 +480,10 @@ creating a cleaner implementation." [Numenta description]
     (let loop ((rx 0) (sx 0) (omits omits))
       (cond [ (fx=? rx reslen) result ]
             [ (if (null? omits) #f
-                (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
+                (fx=? sx (car omits))) (loop rx (fx1+ sx) (cdr omits)) ]
             [ else
                 (synapses-set! result rx (synapses-ref synapses sx))
-                (loop (add1 rx) (add1 sx) omits) ]))))
+                (loop (fx1+ rx) (fx1+ sx) omits) ]))))
                                                                                             ;
 (define (adapt-synapses! permanences     ;; Permanences {CellX} {InputX} Perm Perm ->
           active-cells active-input permanence-increment permanence-decrement)
@@ -479,11 +492,11 @@ creating a cleaner implementation." [Numenta description]
   (for-each
     (lambda (cellx)
       (vector-set! permanences cellx 
-        (let ((synapses (vector-ref permanences cellx))
-              (active-input (list->vector active-input)))
-          (let build-s-t-d [ (sx (fx- (synapses-length synapses) 1))
+        (let ([synapses     (vector-ref permanences cellx)]
+              [active-input (list->vector active-input)])
+          (let build-s-t-d [ (sx (fx1- (synapses-length synapses)))
                              (synapses-to-destroy '()) ]
-            (if (negative? sx)
+            (if (fxnegative? sx)
                 (cond [ (null? synapses-to-destroy) synapses ]
                       [ (fx=? (length synapses-to-destroy) (synapses-length synapses)) (make-synapses 0) ]
                       [ else (prune-synapses synapses synapses-to-destroy) ])
@@ -492,12 +505,12 @@ creating a cleaner implementation." [Numenta description]
                         (permanence (if (fxsearch active-input prex)
                                       (clip-max (fx+ (syn-perm synapse) permanence-increment))
                                       (clip-min (fx- (syn-perm synapse) permanence-decrement)))))
-                  (if (zero? permanence)
+                  (if (fxzero? permanence)
                       ;; build synapses-to-destroy indices as sorted list
-                      (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
+                      (build-s-t-d (fx1- sx) (cons sx synapses-to-destroy))
                       (begin
                         (synapses-set! synapses sx (make-syn prex permanence))
-                        (build-s-t-d (fx- sx 1) synapses-to-destroy)))))))))
+                        (build-s-t-d (fx1- sx) synapses-to-destroy)))))))))
     active-cells))
                                                                                             ;
 (define (add-synapses! permanences       ;; Permanences {CellX} {InputX} Perm ->
@@ -543,7 +556,32 @@ creating a cleaner implementation." [Numenta description]
                           (syn-high (fx+ syn-low max-perm)))
                     (if (synapses-search synapses syn-low syn-high)
                       (build-candidates cs (cdr is) nc)
-                      (build-candidates (cons (make-syn (car is) init-perm) cs) (cdr is) (add1 nc)))) ] ))))))
+                      (build-candidates (cons (make-syn (car is) init-perm) cs) (cdr is) (fx1+ nc)))) ] ))))))
+    active-cells max-news))
+                                                                                            ;
+#;(define (grow-synapses! cp permanences   ;; CP Permanences {CellX} {InputX} {Nat} Perm ->
+          active-cells growth-candidates max-news init-perm)
+  ;; create new synapses for some growth-candidates ('set-random-zeros-on-outer')
+  (for-each
+    (lambda (cellx max-new)
+      (when (positive? max-new)
+        (vector-set! permanences cellx
+          (let ((synapses (vector-ref permanences cellx)))
+            (let build-candidates        ;; {Synapse} {InputX} Nat -> {Synapse}
+                 [ (cs (list)) (is growth-candidates) (nc 0) ]
+              (if (null? is)
+                (list->synapses (merge! fx<? 
+                                  (sort! fx<?
+                                    (if (fx<=? nc max-new)  cs
+                                        (vector->list (vector-sample (list->vector cs) max-new))))
+                                  (synapses->list synapses)))
+                (if ((cp-same-col cp) cellx (car is))  ;; input to this minicolumn?
+                  (let* ( (syn-low  (make-syn (car is) min-perm))
+                          (syn-high (fx+ syn-low max-perm)))
+                    (if (synapses-search synapses syn-low syn-high)
+                      (build-candidates cs (cdr is) nc)
+                      (build-candidates (cons (make-syn (car is) init-perm) cs) (cdr is) (fx1+ nc))))
+                  (build-candidates cs (cdr is) nc))))))))
     active-cells max-news))
                                                                                             ;
 (define (max-new-by-cell permanences     ;; Permanences {CellX} {InputX} Nat -> {Nat}
@@ -553,9 +591,9 @@ creating a cleaner implementation." [Numenta description]
     (lambda (cellx)
       (let* [ (synapses (vector-ref permanences cellx))
               (num-synapses (synapses-length synapses)) ]
-        (do [ (sx 0 (add1 sx))
+        (do [ (sx 0 (fx1+ sx))
               (count 0 (if (memv (syn-prex (synapses-ref synapses sx)) active-input)
-                           (add1 count)
+                           (fx1+ count)
                            count)) ]
             ((fx=? sx num-synapses) (fx- sample-size count)))))
     active-cells))
@@ -576,7 +614,7 @@ creating a cleaner implementation." [Numenta description]
           (lambda (overlaps syn-low syn-high)
             (let ((synapse (synapses-search synapses syn-low syn-high)))
               (if (and synapse (fx>=? (syn-perm synapse) threshold))
-                  (add1 overlaps)
+                  (fx1+ overlaps)
                   overlaps)))
             0
           syn-lows syn-highs))
@@ -586,18 +624,18 @@ creating a cleaner implementation." [Numenta description]
                                                                                             ;
 (define (indices-where pred vec value)   ;; (X Y -> Bool) (vectorof X) Y -> {Nat}
   ;; produce sorted list of indices of vec elements for which (pred element value)
-  (do [ (vx (fx- (vector-length vec) 1) (fx- vx 1))
+  (do [ (vx (fx1- (vector-length vec)) (fx1- vx))
         (result (list) (if (pred (vector-ref vec vx) value)
                            (cons vx result)
                            result)) ]
-      ((negative? vx) result)))
+      ((fxnegative? vx) result)))
                                                                                             ;
 (define (increment-where! cs pred xs y)  ;; (Vectorof Nat) (X Y -> Boolean) (Vectorof X) Y ->
   ;; mutates cs, incrementing elements corresponding to xs for which (pred x y)
-  (do [ (vx 0 (add1 vx)) ]
+  (do [ (vx 0 (fx1+ vx)) ]
       ((fx=? vx (vector-length xs)))
       (when (pred (vector-ref xs vx) y)
-        (vector-set! cs vx (add1 (vector-ref cs vx))))))
+        (vector-set! cs vx (fx1+ (vector-ref cs vx))))))
                                                                                             ;
 (define-syntax fold-of                   ;; Op Base Expr Clause ...
   ;; List comprehensions from the Programming Praxis standard prelude
