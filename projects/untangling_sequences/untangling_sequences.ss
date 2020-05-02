@@ -27,7 +27,7 @@
   ;;  do they have to be to not be useful" [George Box]
 
 (import
-          (except (chezscheme) add1 make-list random reset)
+          (chezscheme)
           (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms l2_l4_patch)  l2l4:))
@@ -55,9 +55,10 @@
               (if specified (cdr specified) default))))
                                                                                             ;
 ;; model and learning parameter defaults (overridable by experiment/run parameters)
-    (num-cortical-columns         (get 'num-cortical-columns          1))
-    (num-minicolumns              (get 'column-count                150))
-    (num-cells-per-l4pop          (get 'num-cells-per-l4pop          10))
+    (num-cortical-columns         (get 'num-cortical-columns  1))
+    (thread-if-ge                 (get 'thread-if-ge          2))
+    (num-minicolumns              (get 'column-count        100))
+    (num-cells-per-l4pop          (get 'num-cells-per-l4pop  10))
     (num-input-bits               (get 'num-input-bits (min 20 (max 4 
                                           (int<- (* num-minicolumns 0.03))))))
     (initial-permanence           (get 'initial-permanence   (perm 0.41)))
@@ -86,7 +87,7 @@
       [predicted-inhibition-threshold . ,l2-sample-size-proximal]
       [sample-size-distal             . ,l2-sample-size-distal]
       [activation-threshold-distal    . ,(int<- (* 0.8 l2-sample-size-distal))]
-      [sdr-size                       . ,(* 5 num-input-bits)]
+      [sdr-size                       . ,(* 2 num-input-bits)]
       [online-learning                . ,online-learning])))
     (l4-overrides  (get 'l4-overrides `(
       [initial-permanence                 . ,initial-permanence]
@@ -119,7 +120,7 @@
     (interleave-training               (get 'interleave-training  #f))
                                                                                             ;
 ;; create the sequences and objects
-    (random-sdr (lambda (size bits)    ;; Nat -> (X -> SDR)
+    (random-sdr (lambda (size bits)    ;; Nat -> ( -> SDR)
       ;; produce function to generate SDR of size with sparsity bits/size
       (let ((range (build-vector size id)))
         (lambda () (list-sort fx<? (vector->list 
@@ -127,27 +128,30 @@
     (build-distinct (lambda (n ->sdr)  ;; Nat (-> SDR) -> (vectorof SDR)
       ;; produce vector of SDRs with minimum overlaps (no more than 3 bits)
       (let ((v (build-vector n (lambda _ (->sdr)))))
-        (do ((i 1 (add1 i))) ((fx=? i n))
+        (do ((i 1 (fx1+ i))) ((fx=? i n))
           (call/cc (lambda (break)
               (let try-again ((tries 0) (overlap 0))
                 (when (fx>? overlap 3) (error #f "can't generate distinct features or locations"))
                 (if (fx>? tries 100)
-                  (try-again 0 (add1 overlap))
+                  (try-again 0 (fx1+ overlap))
                   (let ((vi (vector-ref v i)))
                     (do ((j (fx- i 1) (fx- j 1))) ((fxnegative? j))
                       (when (fx>? (length (intersect1d (vector-ref v j) vi)) overlap)
                         (vector-set! v i (->sdr))
-                        (break (try-again (add1 tries) overlap))))))))))
+                        (break (try-again (fx1+ tries) overlap))))))))))
         v)))
     (feature-pool                      ;; Vectorof SDR indexed by FeatureSDRX
       (build-distinct num-features  (random-sdr num-minicolumns num-input-bits)))
     (location-pool                     ;; Vectorof SDR
       (build-distinct (* 2 num-locations) 
-                      (random-sdr external-input-size (int<- (* 2.5 num-input-bits)))))
+                      (random-sdr 500 #;external-input-size (int<- (* 1.5 num-input-bits)))))
     (feature-locations                 ;; Vectorof SDR indexed by LocationSDRX
       (build-vector num-locations (lambda (i) (vector-ref location-pool i))))
     (random-locations                  ;; Vectorof SDR indexed by LocationSDRX
       (build-vector num-locations (lambda (i) (vector-ref location-pool (+ i num-locations)))))
+    (fixed-sdr  ((random-sdr 500 (int<- (* 1.5 num-input-bits)))))
+    (fixed-locations
+      (build-vector num-locations (lambda _ fixed-sdr)))
     (create-random-experiences         ;; Nat Nat Nat -> Experiences
       (lambda (num-exps num-sensations num-locations)
       ;; produce Object experiences, or Sequence experiences when num-locations is zero
@@ -178,6 +182,7 @@
     (display-timing (get 'display-timing  #t))
     (train-keys     (get 'train-keys     '()))
     (test-keys      (get 'test-keys      '()))
+    (f6-objectxs    #f)
     (start-time     (cpu-time))
     ]
 
@@ -196,13 +201,14 @@
           (selects    (build-vector ns (lambda (sx)
                           (if object?
                             (build-vector num-cortical-columns (lambda (ccx)
-                                (modulo (+ sx ccx) ns)))
+                                (fxmod (fx+ sx ccx) ns)))
                             (make-vector num-cortical-columns sx)))))
           (seq-locations
                   (build-vector num-cortical-columns (lambda _
-                      (vector-ref (if random-seq-location  random-locations  feature-locations) 
+                      (vector-ref (if random-seq-location  random-locations  #;feature-locations
+                                      fixed-locations) 
                                   (random num-locations))))))
-        (do ((sx 0 (add1 sx))) ((= sx ns))
+        (do ((sx 0 (fx1+ sx))) ((fx=? sx ns))
           (let* ( 
               (select (vector-ref selects sx))
               (features
@@ -226,7 +232,7 @@
                       (build-vector num-cortical-columns (lambda _
                           (vector-ref (if random-seq-location  random-locations  feature-locations) 
                                       (random num-locations))))))))
-            (l2l4:compute patch features locations (or learn online-learning))
+            (l2l4:compute patch features locations (or learn online-learning) thread-if-ge)
             (unless (null? report)
               ((car report) sx features))))))
                                                                                             ;
@@ -259,24 +265,25 @@
       (do-with-progress (vector-length es)
         (lambda (ex)
           (let ((e (vector-ref es ex)))
-            (do ((r 0 (add1 r))) ((>= r (- num-repetitions 1)))
+            (do ((r 0 (fx1+ r))) ((fx>=? r (fx1- num-repetitions)))
               (let ((seq (if superimpose-sequence
-                            (vector-ref sequence-order (+ (* ex num-repetitions) r))
+                            (vector-ref sequence-order (fx+ (fx* ex num-repetitions) r))
                             #f)))
                 (have-sensations-of e #t seq)
                                            ;; reset TM between presentations of sequence
                 (unless (sensation-location (vector-ref e 0))
                   (l2l4:reset-seq patch))))
-            (let ((seq (if superimpose-sequence
-                          (vector-ref sequence-order (+ (* ex num-repetitions) (- num-repetitions 1)))
-                          #f)))
-              (have-sensations-of e #t seq ;; last training repetition: save stats
-                (lambda (sx features)
-                  (vector-set! (vector-ref stats ex) sx 
-                    (append (get-stats-for train-keys) (list (cons 'feat features)) '())))))
+            (unless (eq? figure 'f6)
+              (let ((seq (if superimpose-sequence
+                            (vector-ref sequence-order (fx+ (fx* ex num-repetitions) (fx1- num-repetitions)))
+                            #f)))
+                (have-sensations-of e #t seq ;; last training repetition: save stats
+                  (lambda (sx features)
+                    (vector-set! (vector-ref stats ex) sx 
+                      (append (get-stats-for train-keys) (list (cons 'feat features)) '()))))))
             (when (positive? intersperse-noise)
               (let ((noise (vector-ref (create-random-experiences 1 seq-length 0) 0)))
-                (do ((_ 0 (add1 _))) ((= _ intersperse-noise))
+                (do ((_ 0 (fx1+ _))) ((fx=? _ intersperse-noise))
                   (have-sensations-of noise #t #f))))
             (l2l4:reset patch)))))     ;; reset after each object
                                                                                             ;
@@ -286,27 +293,28 @@
       (assert (= num-objects num-sequences))
       (let*-values (
         [(n-inner remainder) (exact-integer-sqrt num-repetitions)]
-        [(n-outer)           (if (>= remainder n-inner)
-                                 (add1 n-inner)
+        [(n-outer)           (if (fx>=? remainder n-inner)
+                                 (fx1+ n-inner)
                                  n-inner)])
-      (do-with-progress n-outer
-        (lambda (o)
+      (do-with-progress num-repetitions #;n-outer
+        (lambda (ox)
           (vector-for-each
             (lambda (ex)
-              (do ((i 0 (add1 i))) ((fx= i n-inner))
+              (do ((ix 0 (fx1+ ix))) ((fx=? ix 1 #;n-inner))
                 (let ((seq (if superimpose-sequence
-                              (vector-ref sequence-order (+ (* ex num-repetitions)
-                                                            (+ (* o n-inner) i)))
+                              (vector-ref sequence-order (fx+ (fx* ex num-repetitions)
+                                                              (fx+ (fx* ox n-inner) ix)))
                               #f)))
                   (unless superimpose-sequence
                     (have-sensations-of (vector-ref sequences ex) #t #f)
                     #;(l2l4:reset-seq patch))
-                  (have-sensations-of (vector-ref objects ex) #t seq)))
+                  (when #t #;(fxzero? (fxmod ox 2))
+                    (have-sensations-of (vector-ref objects ex) #t seq))))
               (when (positive? intersperse-noise)
                 (let ((noise (if (zero? (random 2))
                           (create-random-experiences intersperse-noise seq-length 0)
                           (create-random-experiences intersperse-noise num-points num-locations))))
-                  (do ((i 0 (add1 i))) ((= i intersperse-noise))
+                  (do ((i 0 (fx1+ i))) ((fx=? i intersperse-noise))
                     (have-sensations-of (vector-ref noise i) #t #f))))
               (l2l4:reset patch))
             (indexes objects))))))
@@ -325,17 +333,18 @@
                                                                                             ;
 #;> (define (infer-switching)            ;; ->
       ;; test mix of objects & sequences
-      (let ((objectxs (vector-sample (build-vector num-objects id) 10)))
-        (for-each
-          (lambda (item-type ix)
-            (have-sensations-of
-              (vector-ref
-                (if (eq? item-type 'seq) sequences  objects) (vector-ref objectxs ix))
-              #f #f
-              (lambda (sx features)
-                (vector-set! (vector-ref stats 0) (+ (* 10 ix) sx)
-                  (get-stats-for test-keys)))))
-          '(seq obj seq obj seq seq obj seq obj obj) (build-list 10 id))))
+      (for-each
+        (lambda (item-type ix)
+          (have-sensations-of
+            (vector-ref
+              (if (eq? item-type 'seq) sequences  objects) (vector-ref f6-objectxs ix))
+            #f #f
+            (lambda (sx features)
+              (vector-set! (vector-ref stats 0) (fx+ (fx* 10 ix) sx)
+                (append (get-stats-for test-keys)
+                        (vector-ref (vector-ref stats 0) (fx+ (fx* 10 ix) sx))
+                        '())))))
+        '(seq obj seq obj seq seq obj seq obj obj) (build-list 10 id)))
                                                                                             ;
 ;; run experiment: 1 train network
     (if interleave-training
@@ -343,9 +352,26 @@
       (begin
         (train-all objects)
         (unless superimpose-sequence
-          (train-all sequences))
-        #;(train-all objects)))
+          (train-all sequences))))
+    (when (eq? figure 'f6)               ;; save objects/sequences and trained stats
+      (set! f6-objectxs (vector-sample (build-vector num-objects id) 10))
+      (for-each
+        (lambda (item-type ix)
+          (have-sensations-of
+            (vector-ref
+              (if (eq? item-type 'seq) sequences  objects) (vector-ref f6-objectxs ix))
+            #t #f
+            (lambda (sx features)
+              (vector-set! (vector-ref stats 0) (fx+ (fx* 10 ix) sx)
+                (get-stats-for train-keys)))))
+        '(seq obj seq obj seq seq obj seq obj obj) (build-list 10 id)))
+            
 ;;                 2 reset and run inference
+    #;(when (positive? intersperse-noise)
+      (let ((noise (vector-ref (create-random-experiences 1 seq-length 0) 0)))
+        (do ((_ 0 (fx1+ _))) ((fx=? _ intersperse-noise))
+          (have-sensations-of noise #t #f))))
+
     (l2l4:reset patch)
     (case figure
       [(f6)
@@ -354,13 +380,14 @@
         (infer-all objects)
         (infer-all sequences) ] )
 ;;                 3 save statistics for plots
+;(display stats) (newline)
     (let ((summary-file "HTM-scheme/projects/untangling_sequences/experiment.data")
           (mean  (lambda (x) (if (eq? figure 'f6)  x
-                         (int<- (/ x (+ num-objects num-sequences)))))))
+                         (int<- (/ x (fx+ num-objects num-sequences)))))))
       (with-output-to-file summary-file (lambda ()
-        (write [cons* 
-          [list "figure" (symbol->string figure)]
-          [list "using"  run-args]
+        (write [list
+          [cons [list "figure" (symbol->string figure)]
+          [cons [list "using"  run-args]
           (map (lambda (key)             ;; each stats key (Symbol -> )
             (let ((k2  (substring (symbol->string key) 0 2)))
               (if (or (string=? k2 "l4") (string=? k2 "TM") (string=? k2 "TX"))
@@ -383,13 +410,22 @@
                                             (cdr trained)
                                             (cdr stats-for-key))))
                                   ac)))
+                            (define (vector-binarize v)
+                              (vector-map (lambda (e)
+                                  (cond
+                                    [(fx<=? (fx1- num-input-bits) e) (fxmax e num-input-bits)]
+                                    [(fx<=? e 1) 0]
+                                    [else e]))
+                                v))
                             (if stats-for-key
                               (case key
                                 [(l4pa)  (add-overlap-with 'l4ac)]
                                 [(TMpa)  (add-overlap-with 'TMac)]
                                 [(TXpa)  (add-overlap-with 'TXac)]
                                 [(TMlnp TMlpa TXlnp TXlpa l4lnp l4lpa)
-                                  (+ ac (vector-average (cdr stats-for-key)))]
+                                  #;(cdr stats-for-key)
+                                  (vector-binarize (cdr stats-for-key))
+                                  #;(+ ac (vector-average (cdr stats-for-key)))]
                                 [else ac])
                               ac)))
                         accs 
@@ -398,20 +434,20 @@
                     (lambda _ 0.0))
                   stats)) ) ] ]
                 (list (symbol->string key) (list)) )))
-            test-keys) ] ))
+            test-keys) ]]] ))
             'truncate ))
       (when display-timing
-        (let ((tenths (div (+ (- (cpu-time) start-time) 50) 100))
-              (sum-l2  (lambda (f)
+        (let ([tenths (div (+ (- (cpu-time) start-time) 50) 100)]
+              [sum-l2  (lambda (f)
                 (vector-fold-left (lambda (sum layer)
                     (+ sum (f layer)))
                   0
-                  (l2l4:patch-l2s patch))))
-              (sum-l4 (lambda (f pop)
+                  (l2l4:patch-l2s patch)))]
+              [sum-l4 (lambda (f pop)
                 (vector-fold-left (lambda (sum layer)
                     (+ sum (f layer pop)))
                   0
-                  (l2l4:patch-l4s patch)))))
+                  (l2l4:patch-l4s patch)))])
           (for-each display `(
               ,(symbol->string figure) " " ,@run-args #\newline
               ,(div tenths 10) "." ,(mod tenths 10) "s thread time\n"
@@ -429,7 +465,11 @@
               ,(sum-l2 l2l4:get-n-l2-distal-segs)   " p23 distal synapses\n"
               ,(sum-l2 l2l4:get-n-l2-lateral-syns)  "/" 
               ,(sum-l2 l2l4:get-n-l2-lateral-segs)  " p23 lateral synapses\n"
-              ))))
+              )))
+        (let ([t (cost-center-time cost-center-1)])
+          (for-each display `(,(time-second t) "." ,(div (time-nanosecond t) 10000000) "s in cost center 1\n")))
+        (let ([t (cost-center-time cost-center-2)])
+          (for-each display `(,(time-second t) "." ,(div (time-nanosecond t) 10000000) "s in cost center 2\n"))))
       ))
 
 (define exp4a '(
@@ -457,8 +497,10 @@
     [num-objects     .  50]
     [num-features    .  50]
     [num-locations   . 100]
-    [num-repetitions .  30]
-    ;[train-keys      . (l4ac TMac TXac)]
+    [num-repetitions .  20 #;30]
+    [interleave-training . #t]
+    [random-seq-location . #t]
+    [train-keys      . (l4ac TMac TXac)]
     [test-keys       . (l4lpa TMlpa TXlpa)]))
                                                                                             ;
 (define run                              ;; String [ {KWarg} ] ->
@@ -467,12 +509,17 @@
     [ (figure) (run figure '()) ]
     [ (figure options)
         (let ((start (statistics)))
-          (experiment
-            (case figure
-              [("4a")    exp4a ]
-              [("5a")    exp5a ]
-              [("6")     exp6  ])
-            options)
+          (if (string=? figure "tt")     ;; threading test
+            (do ((_ 6600 (fx1- _))) ((fxnegative? _))
+              ;(vector-for-each (lambda _ (void))
+              (threaded-vector-for-each 1 (lambda _ (void))
+                (build-vector 1 id) (build-vector 1 id) (build-vector 1 id) (build-vector 1 id) (build-vector 1 id)))
+            (experiment
+              (case figure
+                [("4a")    exp4a ]
+                [("5a")    exp5a ]
+                [("6")     exp6  ])
+              options))
           (sstats-print (sstats-difference (statistics) start))) ] ))
   
 (define (option name parameter)          ;; String [Number] -> KWarg
@@ -483,6 +530,7 @@
     [("-it")    `[interleave-training   . ,(string=? "#t"  parameter)] ]
     [("-lps")   `[location-per-sequence . ,(string=? "#t"  parameter)] ]
     [("-ncc")   `[num-cortical-columns  . ,(string->number parameter)] ]
+    [("-tif")   `[thread-if-ge          . ,(string->number parameter)] ]
     [("-nf")    `[num-features          . ,(string->number parameter)] ]
     [("-nl")    `[num-locations         . ,(string->number parameter)] ]
     [("-no")    `[num-objects           . ,(string->number parameter)] ]
@@ -505,6 +553,6 @@
       [else
         (process (cdr args) options (car args))])))
 
-(random-seed! #;42 (time-second (current-time)))
+(random-seed #;42 (time-second (current-time)))
         
 (main (command-line-arguments))
