@@ -17,13 +17,12 @@
   ;; You should have received a copy of the GNU Affero Public License      ;;
   ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-  ;; Translated from NuPIC coordinate.py, see comments there for more info.
   #|
-  Given an integer coordinate in a 2-dimensional space, and a radius around
-  that coordinate, the Coordinate Encoder returns an SDR representation
-  of that position. It uses the following algorithm:
 
+Given an integer coordinate in a 2-dimensional space, and a radius around
+that coordinate, returns an SDR representation of that position.
+Translated from NuPIC coordinate.py, see comments there for more info.
+  Description of algorithm from .py:
   1. Find all the coordinates around the input coordinate, within the
      specified radius.
   2. For each coordinate, use a uniform hash function to
@@ -61,7 +60,8 @@
     (mutable w)                          ;; Nat: number of 1 bits in SDR
     (mutable n)                          ;; Nat: size of SDR
     (mutable radius)                     ;; Nat: 
-    ))
+    )
+  (sealed #t) (opaque #t) (nongenerative ce))
 
 (define (encode ce centre)               ;; CE Coord -> SDR
   ;; produce SDR for centre using ce

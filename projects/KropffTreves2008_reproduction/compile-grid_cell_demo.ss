@@ -12,7 +12,7 @@
     (cp0-score-limit 1000)               ;; (default is 20)
     (enable-cross-library-optimization #t)
     (generate-wpo-files #t))
-  (compile-program "HTM-scheme/projects/KropffTreves2008_reproduction/grid_cell_demo.ss" "object-files/grid_cell_demo.so")
-  (compile-whole-program "object-files/grid_cell_demo.wpo" "grid_cell_demo.wp"))
+  (compile-program "HTM-scheme/projects/KropffTreves2008_reproduction/grid_cell_demo2.ss" "object-files/grid_cell_demo2.so")
+  (compile-whole-program "object-files/grid_cell_demo2.wpo" "grid_cell_demo2.wp"))
   
 (exit)

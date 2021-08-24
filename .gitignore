@@ -1,7 +1,14 @@
 compiled
 experiments
+stash
+*engram*
+*_e.ss
+*_ee.ss
+*.cpp
 *#*#*
 *.html
 *.so
 *.wpo
+*.data
+
 

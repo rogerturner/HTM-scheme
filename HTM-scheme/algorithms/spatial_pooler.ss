@@ -20,7 +20,7 @@
 
   ;; Translated from NuPIC spatial_pooler.py, see comments there for more info.
   ;; Max 2 dimensions, wraparound for 1D only, no parameter consistency checking.
-  ;; Indentation facilitates using a "Fold All" view (in eg Atom) for an overview.
+  ;; See htm_concept.ss for type and data structure description and code conventions.
 
 (library (HTM-scheme HTM-scheme algorithms spatial_pooler)
                                                                                             ;
@@ -325,6 +325,14 @@
                                                   (sp-syn-perm-below-stimulus-inc sp))))
           (vector-set! (sp-connected-synapses sp) cx (connected-inputs sp cx))))
       weak-columns)))
+                                                                                            ;
+(define (synapses-count proc syns)       ;; (Synapse -> Boolean) Synapses -> Nat
+  ;; produce count of syns for which (proc elt) is not false
+  (do ( [sx (fx1- (synapses-length syns)) (fx1- sx)]
+        [count 0 (if (proc (synapses-ref syns sx))
+                     (fx1+ count)
+                     count)])
+      ((fxnegative? sx) count)))
                                                                                             ;
 (define (raise-permanence-to-threshold   ;; SP Segment ->
           sp segment)

@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Turner
+    given-names: Roger
+title: HTM-scheme
+keywords:
+  - "Hierarchical Temporal Memory"
+    "Chez Scheme"
+license: AGPL-3.0
+references:
+  - type: software
+    authors: 
+      - name: Numenta
+    repository-code: "https://github.com/numenta/htmresearch"

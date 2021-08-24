@@ -31,8 +31,8 @@ Extends Spatial Pooler: see
   compute)
   
 (import
-  (except (chezscheme) add1 make-list reset)
-  (except (HTM-scheme HTM-scheme algorithms htm_prelude) #;random)
+  (except (chezscheme) make-list reset)
+          (HTM-scheme HTM-scheme algorithms htm_prelude)
           (HTM-scheme HTM-scheme algorithms htm_concept)
   (prefix (HTM-scheme HTM-scheme algorithms spatial_pooler) sp:))
 
@@ -67,31 +67,20 @@ Extends Spatial Pooler: see
   (gc-prev-input-vector-set!   gc 0 ))
                                                                                             ;
 (define (compute gc input-vector learn)  ;; GC InputVec Boolean -> (listof ColumnX)
-  ;; produce active columns from input; optionally update sp if learning
-  (sp:sp-iteration-num-set! gc (fx1+ (sp:sp-iteration-num gc)))
-  (when learn (sp:sp-iteration-learn-num-set! gc (fx1+ (sp:sp-iteration-learn-num gc))))
-  (let* (
-      [overlaps         (sp:calculate-overlap gc input-vector)]  ;; (ColVecOf Overlap)
-      [sum-synapses     (sp:sp-connected-counts gc)]             ;; (ColVecOf Nat) set by adapt-synapses
-      [overlaps         (vector-map (lambda (ov ss)
-                            (if (fxzero? ss)  0.0 
-                                (fl/ ov (fixnum->flonum ss))))
-                          overlaps sum-synapses)]
-      [overlaps         (_fatigue gc overlaps)]
-      [boosted-overlaps (if learn
-                            (vector-map fl* overlaps (sp:sp-boost-factors gc))
-                            overlaps)]
-      [active-columns   (sp:inhibit-columns gc boosted-overlaps)])
-
-    (when learn
-      (adapt-synapses          gc input-vector active-columns)
-      (sp:update-duty-cycles   gc overlaps active-columns)
-      (sp:bump-up-weak-columns gc)
-      (sp:update-boost-factors gc)
-      (when (fxzero? (fxmod (sp:sp-iteration-num gc) (sp:sp-update-period gc)))
-          (sp:sp-inhibition-radius-set! gc (sp:update-inhibition-radius gc))
-          (sp:update-min-duty-cycles gc)))
-    active-columns))
+  ;; override calculate-overlap and adapt-synapses in sp:compute
+  (sp:compute gc input-vector learn 
+    (lambda (calculate-overlap)
+      (let* (
+          [overlaps         (calculate-overlap gc input-vector)]
+          [overlaps         (vector-map (lambda (ov cs)
+                                (let ([sum-synapses (bitwise-bit-count cs)])
+                                  (if (fxzero? sum-synapses)  0.0 
+                                      (fl/ ov (fixnum->flonum sum-synapses)))))
+                              overlaps (sp:sp-connected-synapses gc))])
+        (if learn (_fatigue gc overlaps)
+                  overlaps)))
+    (lambda (active-columns)
+      (adapt-synapses gc input-vector active-columns))))
                                                                                             ;
 (define (_fatigue gc overlaps)           ;; (ColVecOf Number) (ColVecOf OverlapX) -> (ColVecOf OverlapX)
   ;;
@@ -112,8 +101,9 @@ Extends Spatial Pooler: see
         (syn-perm-active-inc     (sp:sp-syn-perm-active-inc gc))
         (syn-perm-inactive-dec   (sp:sp-syn-perm-inactive-dec gc))
         (syn-perm-connected      (sp:sp-syn-perm-connected gc)))
-    (sp:for-each-segment gc (lambda (segment cx)
-        (let ((prev-active (memv cx (gc-prev-active-columns gc))))
+    (threaded-vector-for-each (lambda (cx)
+        (let ([prev-active (memv cx (gc-prev-active-columns gc))]
+              [segment (vector-ref (sp:sp-potential-pools gc) cx)])
           (if (zero? (sp:sp-stimulus-threshold gc))
             (do ([i (fx1- (synapses-length segment)) (fx1- i)])
                 ((fxnegative? i))
@@ -131,12 +121,10 @@ Extends Spatial Pooler: see
                             (sp:decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold)))]
                       [(fx=? perm min-perm)
                         (when inp-bit
-                          (synapses-set! segment i
-                            (sp:increase-perm synapse syn-perm-trim-threshold)))]
-                      [(fx=? perm max-perm)
+                          (synapses-set! segment i (make-syn inpx syn-perm-trim-threshold)))]
+                      [else
                         (unless inp-bit
-                          (synapses-set! segment i
-                            (sp:decrease-perm synapse syn-perm-inactive-dec syn-perm-trim-threshold)))])))))
+                          (synapses-set! segment i (make-syn inpx (fx- max-perm syn-perm-inactive-dec))))])))))
             (let loop ((i (fx1- (synapses-length segment))) (num-connected 0))
               (cond 
                 [(fxnegative? i)
@@ -158,8 +146,9 @@ Extends Spatial Pooler: see
                         (loop (fx1- i) (if (fx>=? (syn-perm synapse) syn-perm-connected)
                                             (fx1+ num-connected)
                                             num-connected)))))])))
-          ))
-      active-columns))
+          )
+          (vector-set! (sp:sp-connected-synapses gc) cx (sp:connected-inputs gc cx)))
+      (list->vector active-columns) #;(vector-sample (list->vector active-columns) 7)))
   (gc-prev-active-columns-set! gc active-columns)
   (gc-prev-input-vector-set!   gc input-vector))
                                                                                             ;

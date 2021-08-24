@@ -139,7 +139,7 @@
       (TM-overrides  (get 'TM-overrides
                       `([basal-predicted-segment-decrement . ,basal-predicted-segment-decrement])))
       (L4-overrides  (get 'L4-overrides
-                      `([initial-permanence                . ,(perm 0.21)]
+                      `([initial-permanence                . ,(perm 0.41)]  ;; ?
                         [activation-threshold              . 18]
                         [min-threshold                     . 18]
                         [basal-predicted-segment-decrement . ,basal-predicted-segment-decrement])))
@@ -318,7 +318,7 @@
                           (map (lambda (v) (vector-ref v 0)) sens-stats))
                     exp-stats))))))
           stats)])
-    (let ((summary-file "HTM-scheme/projects/combined_sequences/combined_sequences.data"))
+    (let ((summary-file "HTM-scheme/projects/combined_sequences/experiment.data"))
       (with-output-to-file summary-file (lambda ()
         (write [cons* 
           [list "figure" (symbol->string figure)]
@@ -475,6 +475,8 @@
     [train-keys           . (L2r L2r1 L2r2)]
     [test-keys            . (L2a L2a1 L2a2)])
     args))
+
+(random-seed! 42)
 
 (for-each
   (lambda (expt)

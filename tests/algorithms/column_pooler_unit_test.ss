@@ -33,7 +33,7 @@
 (define failures  0)
                                                                                             ;
 (define (test name)
-  (set! tests (string-append tests "\n  " name)))
+  (newline) (display name) (set! tests ""))
                                                                                             ;
 (define-syntax expect                    ;; ((X ... -> Y) X ...) Y -> [error]
   ;; check that function application(s) to arguments match expected values
@@ -48,15 +48,23 @@
                           "  expected: " ,expected #\newline 
                           "  returned: " ,result  #\newline))
                         (set! failures (add1 failures))
-                        (set! tests "")))) ...)])))
+                        (set! tests "")))) ...)]
+      [ (_ expr ...)
+        #'(begin (if expr
+                    (set! successes (add1 successes))
+                    (begin 
+                      (for-each display `(,tests #\newline "**" expr " failed\n"))
+                      (set! failures (add1 failures))
+                      (set! tests ""))) ...)]
+                      )))
                                                                                             ;
 (define (initialize-default-pooler . kwargs)
   (cp:make-cp 
     (append
       kwargs
       `(
-        [input-width . ,(* 2048 8)]
-        [cell-count  . 2048]))))
+        [input-width  . ,(* 150 16)]
+        [cell-count   . 4096]))))
                                                                                             ;
 (define (set l)
   (unique = l))
@@ -66,53 +74,79 @@
   (build-list (fx- limit start)
     (lambda (i) (+ start i))))
                                                                                             ;
-(test "Constructor")
+(test "Constructor")                     ;; Create a simple instance and test the constructor
   (let ((pooler (initialize-default-pooler)))
-    (expect [(cp:number-of-cells   pooler)  2048]
-            [(cp:number-of-inputs  pooler) 16384]
+    (expect [(cp:number-of-cells   pooler)  4096]
+            [(cp:number-of-inputs  pooler)  2400]
             [(cp:test:number-of-proximal-synapses 
                     pooler (range 0 2048))     0]
             [(cp:test:num-connected-proximal-synapses 
                     pooler (range 0 2048))     0]))
                                                                                             ;
-(test "InitialNullInputLearnMode")
-  (let ((pooler (initialize-default-pooler)))
+(test "InitialNullInputLearnMode")       ;; Tests with no input in the beginning
+  (let* ( (pooler (initialize-default-pooler))
+          (minss  (cp:test:cp-min-sdr-size pooler))
+          (maxss  (cp:test:cp-max-sdr-size pooler)))
+
+    ;; Should be no active cells in beginning
     (expect [(length (cp:get-active-cells pooler))  0])
+
+    ;; After computing with no input should have active cells
     (cp:compute pooler (list) #t)
     (let ((object-sdr1 (set (cp:get-active-cells pooler))))
-      (expect [(length object-sdr1) 40])
+      (expect [<= minss (length object-sdr1) maxss])
+      
+      ;; Should be no active cells after reset
       (cp:reset pooler)
       (expect [(length (cp:get-active-cells pooler))  0])
+      
+      ;; Computing again with no input should lead to different active cells
       (cp:compute pooler (list) #t)
       (let ((object-sdr2 (set (cp:get-active-cells pooler))))
-        (expect [(length object-sdr2) 40]
-                [(< (length (intersect1d object-sdr1 object-sdr2)) 5) #t]))))
+        (expect [<= minss (length object-sdr2) maxss]
+                [< (length (intersect1d object-sdr1 object-sdr2)) 5]))))
                                                                                             ;
-(test "InitialProximalLearning")
-  (let ((pooler (initialize-default-pooler)))
+(test "InitialProximalLearning")         ;; Tests the first few steps of proximal learning
+  (let* ( (pooler (initialize-default-pooler))
+          (minss  (cp:test:cp-min-sdr-size pooler))
+          (maxss  (cp:test:cp-max-sdr-size pooler)))
+  
+    ;; Get initial activity
     (cp:compute pooler (range 0 40) #t)
-    (expect [(length (cp:get-active-cells pooler))  40])
-    (let ((object-sdr (set (cp:get-active-cells pooler))))
-      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* 40 20)])
+    (let* ( (object-sdr (set (cp:get-active-cells pooler)))
+            (object-sdr-size (length object-sdr)))
+      (expect [<= minss object-sdr-size maxss])
+
+      ;; Ensure we've added correct number synapses on the active cells
+      ;; Ensure they are all connected
+      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler))
+               (* object-sdr-size 20)])
+
+      ;; As multiple different feedforward inputs come in, the same set of cells should be active
       (cp:compute pooler (range 100 140) #t)
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
-      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler)) (* 40 40)])
+      (expect [(cp:test:num-connected-proximal-synapses pooler (cp:get-active-cells pooler))
+               (* object-sdr-size 40)])
+
+      ;; If there is no feedforward input we should still get the same set of active cells
       (cp:compute pooler (list) #t)
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
+
+      ;; In "learn new object mode", given a familiar feedforward input after reset we should not get the same set of active cells
       (cp:reset pooler)
       (cp:compute pooler (range 0 40) #t)
       (expect [(equal? object-sdr (set (cp:get-active-cells pooler))) #f ])
-      (expect [(length (cp:get-active-cells pooler))  40])))
-                                                                                            ;
+      (expect [<= minss (length (cp:get-active-cells pooler)) maxss])))
+                                                                                           ;
 (test "InitialInference")
   (let ((pooler (initialize-default-pooler)))
-    (cp:compute pooler (range 0 40) #t)
+    (cp:compute pooler (range 0 40) #t)      ;; Learn one pattern
     (let ((object-sdr (set (cp:get-active-cells pooler))))
-      (cp:compute pooler (range 0 40) #t)
+      (cp:compute pooler (range 0 40) #t)    ;; Form internal distal connections
       (cp:reset pooler)
-      (cp:compute pooler (range 0 40) #f)
+      (cp:compute pooler (range 0 40) #f)    ;; Inferring on same pattern should lead to same result
       (expect [(set (cp:get-active-cells pooler)) object-sdr])
-      (cp:compute pooler (list) #f)
+      (cp:compute pooler (list) #f)          ;; Inferring with no inputs should maintain same pattern
       (expect [(set (cp:get-active-cells pooler)) object-sdr])))
                                                                                             ;
 (test "ShortInferenceSequence")
@@ -159,7 +193,7 @@
                 [(cp:test:num-connected-proximal-synapses pooler (list cell)) 10])
         (let* ( 
             (synapses
-              (vector->list (vector-ref (cp:test:cp-proximal-permanences pooler) cell)))
+              (fxvector->list (vector-ref (cp:test:cp-proximal-permanences pooler) cell)))
             (presynaptic-cells (map syn-prex synapses))
             (permanences       (map syn-perm synapses)))
           (expect [(set presynaptic-cells) (set feedforward-input-1)])
@@ -175,8 +209,19 @@
       (cp:get-active-cells pooler))
     )                                                                                        ;
 
+#|
+  testProximalLearning_NoSampling
+  testProximalLearning_InitiallyDisconnected
+  testProximalLearning_ReinforceExisting
+  testProximalLearning_PunishExisting
+  testLearningWithLateralInputs
+  testInferenceWithLateralInputs
+  testInferenceWithChangingLateralInputs
+  |#
+
   ;; flush test failures (replace failures with #t to confirm all tests)
   (when #t ;failures
+    (newline)
     (display successes)
     (display " tests passed")
     (display tests)

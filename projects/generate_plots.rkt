@@ -130,6 +130,8 @@
          (l2a2   (value-for "l2a2"))
          (l2a2c  (value-for "l2a2c"))
          (l4lnp  (value-for "l4lnp"))
+         (l3pa   (value-for "l3pa"))
+         (l3lpa  (value-for "l3lpa"))
          (l4pa   (value-for "l4pa"))
          (l4lpa  (value-for "l4lpa"))
          (TMlnp  (value-for "TMlnp"))
@@ -138,7 +140,7 @@
          (TXlnp  (value-for "TXlnp"))
          (TXpa   (value-for "TXpa"))
          (TXlpa  (value-for "TXlpa")))
-    (when using
+    (when (and using (null? plots))
       (for-each
        (lambda (u)
          (display " '")
@@ -170,9 +172,12 @@
                     #:width 512 #:height 512))]
            [("kt2" "kt3" "kt4")
             (let ((enc-rf (value-for "enc-rf")))
-              (plot (points enc-rf #:sym 'dot
-                            #:x-min 0 #:x-max 256 #:y-min 0 #:y-max 256)
-                    #:width 256 #:height 256))]
+              (parameterize ([plot-x-tick-labels? #f]
+                             [plot-y-tick-labels? #f]
+                             [plot-tick-size 0])
+                (plot (points enc-rf #:sym 'dot
+                              #:x-min 0 #:x-max 255 #:y-min 0 #:y-max 255)
+                      #:width 130 #:height 130)))]
            [("f4a")
             (let ((ys (if TXlnp
                           (list l4lnp l4pa TMlnp TMpa TXlnp TXpa)
@@ -197,14 +202,23 @@
                  (apply render (with-x-coords ys)))))]
 
            [("f6")
-            (let ((so-y (+ 0.5 7 #;(apply max (append l4lpa TMlpa TXlpa)))))
+            (let ([so-y (+ 1 (* 1.1 (apply max (append
+                                                (apply append
+                                                       (if l4pa (map vector->list l4pa) '()))
+                                                (apply append
+                                                       (if TMpa (map vector->list TMpa) '()))
+                                                (apply append
+                                                       (if TXpa (map vector->list TXpa) '()))))))])
               (define (transpose vs)   ;; (listof (vectorof Number)) -> (listof (listof Number))
                 ;; all first elements of vectors as list, then all second, etc
                 (build-list
                  (vector-length (car vs))
                  (lambda (i)
                    (map (lambda (v)
-                          (vector-ref v i))
+                          (if (negative? (vector-ref v i))
+                              (- so-y 1)
+                              (vector-ref v i))
+                          #;(vector-ref v i))
                         vs))))
               (define (with-x-coords y-coords)            ;; (listof Number) -> (listof (vector x y))
                 (map vector (range (length y-coords)) y-coords))
@@ -227,16 +241,41 @@
                    [x-max 101]
                    [y-max (+ so-y (/ so-y 3))])
                 (plot 
-                 #:title #;"Figure 6' Inferring combined sensorimotor and temporal sequence stream"
-                 "Figure 6' Combined sensorimotor/sequence streams, 19 cortical columns of 100 minicolumns"
+                 #:title "Figure 6a Combined sensorimotor/sequence streams"
                  #:x-min -2 #:x-max (x-max) #:x-label "Input number"
                  #:y-min -1 #:y-max (y-max) #:y-label "Number of cells"
-                 (list
-                  (if (pair? TXlpa)
-                      (f6lines TXlpa l4lpa -0.5 'DarkOrange "Predicted active sensorimotor ss4(L2/3) cells")
+                 #;(list  ;; plot number predicted
+                    (if (pair? TXlpa)
+                        (f6lines TXlpa l4lpa -0.5 'DarkOrange "Predicted active sensorimotor ss4(L2/3) cells")
+                        '())
+                    (if (pair? l3lpa)
+                        (f6lines l3lpa l4pa -0.5 'Green "Predicted active temporal seq p3 cells")
+                        '())
+                    (f6lines l4lpa TXlpa 0.5 'Red "Predicted active sensorimotor p4 cells")
+                    (f6lines TMlpa TMlpa 0.0 'RoyalBlue "Predicted active temporal seq ss4(L4) cells")
+                    (map (lambda (x)
+                           (vrule x 0 so-y #:width 1 #:style 'long-dash))
+                         (range -0.5 90 10))
+                    (map (lambda (x l)
+                           (point-label (vector x so-y) l #:size 12 #:point-size 0))
+                         (range 0 100 10)
+                         (let ((s "Sequence") (o "   Object"))
+                           (list s o s o s s o s o o))))
+                 (list  ;; plot correctly predicted
+                  (if (pair? TXpa)
+                      (f6lines TXpa (if (pair? l4pa) l4pa TXpa)
+                               -0.5 'DarkOrange "Predicted active sensorimotor ss4(L2/3) cells")
                       '())
-                  (f6lines l4lpa TXlpa 0.5 'Red "Predicted active sensorimotor p4 cells")
-                  (f6lines TMlpa TMlpa 0.0 'RoyalBlue "Predicted active temporal seq ss4(L4) cells")
+                  (if (pair? l3pa)
+                      (f6lines l3pa TXpa 0.5 'Green "Predicted active temporal seq p3 cells")
+                      '())
+                  (if (pair? l4pa)
+                      (f6lines l4pa (if (pair? TXpa) TXpa l4pa)
+                               0.5 'Red "Predicted active sensorimotor p4 cells")
+                      '())
+                  (if (pair? TMpa)
+                      (f6lines TMpa TMpa 0.0 'RoyalBlue "Predicted active temporal seq ss4(L4) cells")
+                      '())
                   (map (lambda (x)
                          (vrule x 0 so-y #:width 1 #:style 'long-dash))
                        (range -0.5 90 10))
@@ -244,7 +283,8 @@
                          (point-label (vector x so-y) l #:size 12 #:point-size 0))
                        (range 0 100 10)
                        (let ((s "Sequence") (o "   Object"))
-                         (list s o s o s s o s o o)))))))]
+                         (list s o s o s s o s o o))))
+                 )))]
 
            [("H3b" "H3c" "H4b")
             (parameterize
@@ -321,10 +361,10 @@
               (plot-experiment (car data))
               (unless (null? (cdr data)) (plot (cdr data))))
             (newline)
-            (if (> (length plots) 5) (begin
-                                       (display (car plots))
-                                       (newline)
-                                       (for-each display (cdr plots)))
+            (if #f #;(> (length plots) 5) (begin
+                                            (display (car plots))
+                                            (newline)
+                                            (for-each display (cdr plots)))
                 (for-each display plots))
             (newline)
             (sleep 1)

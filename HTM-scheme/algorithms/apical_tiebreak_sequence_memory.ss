@@ -86,7 +86,7 @@
                 apical-growth-candidates)))
       (tm-prev-predicted-cells-set! tm (attm:get-predicted-cells tm))
       (attm:activate-cells tm active-columns (attm:get-active-cells tm) (tm-prev-apical-input tm)
-                      (attm:get-winner-cells tm) (tm-prev-apical-growth-candidates tm) learn)
+                      (attm:get-learning-cells tm) (tm-prev-apical-growth-candidates tm) learn)
       (attm:depolarize-cells tm (attm:get-active-cells tm) apical-input learn)
       (tm-prev-apical-input-set! tm apical-input)
       (tm-prev-apical-growth-candidates-set! tm apical-growth-candidates))]
@@ -101,10 +101,10 @@
                                                                                             ;
 (define (get-next-basal-predicted-cells tm)  ;; TM -> {CellX}
   ;; Cells with active basal segments
-  (unique! fx=? (attm:map-segments-to-cells (attm:get-active-basal-segments tm))))
+  (attm:map-segments-to-cells (attm:get-active-basal-segments tm)))
                                                                                             ;
 (define (get-next-apical-predicted-cells tm) ;; TM -> {CellX}
   ;; Cells with active apical segments
-  (unique! fx=? (attm:map-segments-to-cells (attm:get-active-apical-segments tm))))
+  (attm:map-segments-to-cells (attm:get-active-apical-segments tm)))
 
 )

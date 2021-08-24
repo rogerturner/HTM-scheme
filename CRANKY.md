@@ -1,5 +1,7 @@
 # THE CRANKY DEVELOPER'S MANIFESTO
 
+(adapted from https://dev.to/codemouse92/the-cranky-developer-manifesto--24km)
+
 I am developing this project for the sole purpose of my own enjoyment.
 I make no promises about release date, features, usability, stability,
 practicality, or compliance with any normal standards of software

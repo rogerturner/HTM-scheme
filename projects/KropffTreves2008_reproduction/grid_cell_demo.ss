@@ -109,7 +109,7 @@ Partial replication of experiments reported in:
         [input-dimensions                . ,(list (ce:ce-n enc))]
         [column-dimensions               . (100)]
         [potential-pct                   . 0.95]
-        [num-active-columns-per-inh-area . ,(int<- (* 0.2 100))]
+        [num-active-columns-per-inh-area . 10 #;,(int<- (* 0.2 100))]
         [syn-perm-inactive-dec           . ,(perm 0.001)]
         [syn-perm-active-inc             . ,(perm 0.005)]
         [syn-perm-connected              . ,(perm 0.250)]
@@ -161,10 +161,10 @@ Partial replication of experiments reported in:
                 [list "course" (env-course env)]]
               [("kt2")
                 [list "enc-rf"
-                  (receptive-field samp 1 (lambda (x y)
+                  (receptive-field samp 2 (lambda (x y)
                       (ce:encode enc (make-rectangular x y)))) ]]
               [("kt3" "kt4")
-                  (data-for-gcrf samp 1)])]]
+                  (data-for-gcrf samp 2)])]]
           [data (if samp  data
                   [cons [list "using" args] data])])
         [cons [list "figure" figure] data]))
@@ -180,7 +180,7 @@ Partial replication of experiments reported in:
               (data-for "kt3" s))
             (take 5 gc-samples))] )
       (for-each display `("Training for " ,train-time " cycles ...\n"))
-      (time
+      (begin #;time
         (do-with-progress train-time (lambda (step)
             (when (zero? (fxmod step 50000))
               (with-output-to-file file (lambda ()
@@ -190,15 +190,9 @@ Partial replication of experiments reported in:
                           [list (data-for-gcrf s 3)]])
                       (take 5 gc-samples))))
                 'truncate)
-              (when (fx=? step 50000)
-                (ce:ce-radius-set! enc 6)
-                (ce:ce-w-set! enc 100))
-              (when (fx=? step 100000)
-                (ce:ce-radius-set! enc 7)
-                (ce:ce-w-set! enc 125))
-              (when (fx=? step 150000)
-                (ce:ce-radius-set! enc 8)
-                (ce:ce-w-set! enc 150)))
+              (when (fxpositive? step)
+                (ce:ce-radius-set! enc (fx1+ (ce:ce-radius enc)))
+                (ce:ce-w-set! enc (int<- (* 1.25 (ce:ce-w enc))))))
             (move env (fx<? step 10000))
             (gc:compute gcm (encode (env-position env)) #t))))
                                                                                             ;
@@ -206,15 +200,23 @@ Partial replication of experiments reported in:
       (with-output-to-file file (lambda ()
           (write
             (append
-              [list (data-for "kt1" #f)]
+              #;[list (data-for "kt1" #f)]
               (map (lambda (s)
                   (data-for "kt2" s))
                 enc-samples)
               untrained
-              (map (lambda (s)
-                  (data-for "kt4" s))
-                gc-samples))))
-        'truncate))  )))
+              (let ([data    (make-vector gc-num-samples)]
+                    [samples (list->vector gc-samples)])
+                (threaded-vector-for-each (lambda (sx)
+                    (vector-set! data sx (data-for "kt4" (vector-ref samples sx))))
+                  (build-vector gc-num-samples id))
+                (vector->list data)))))
+        'truncate))
+
+      #;(let ((t (cost-center-time cost-center-1)))
+        (for-each display `(,(time-second t) "." ,(div (time-nanosecond t) 10000000) "s in cost center 1\n")))
+        
+          )))
 
 (define (option name parameter)          ;; String [Number] -> KWarg
   ;; accept a few run options on command line
@@ -236,6 +238,6 @@ Partial replication of experiments reported in:
           (parse (cdr cla) (cons (option (car cla) parameter) args) "#t") ]
       [ else (parse (cdr cla) args (car cla)) ])))
         
-(main)
+(time (main))
         
   

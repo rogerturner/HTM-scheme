@@ -1,4 +1,4 @@
-#!r6rs
+#!chezscheme
 
 ;; ========= HTM-scheme Temporal Memory Copyright 2017 Roger Turner. =========
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -88,7 +88,7 @@
     (get-predictive-cols tm:get-predictive-cols)))
                                                                                             ;    
 (import 
-  (rnrs)
+  (except (chezscheme) reset)
   (HTM-scheme HTM-scheme algorithms htm_prelude))
 
 ;; === Temporal Memory Types ===
@@ -113,7 +113,7 @@
 ;; === Parameters and Data ===
                                                                                             ;
 (define x10k 1000)
-(define %max-perm% 999)                 ;; Fixnum
+(define %max-perm% 999)                  ;; Fixnum
 (define %min-perm% 0)                    ;; Fixnum
                                                                                             ;
 (define (clip-max perm)                  ;; Permanence -> Permanence
@@ -122,7 +122,7 @@
 (define (clip-min perm)                  ;; Permanence -> Permanence
   (fxmax %min-perm% perm))
                                                                                             ;
-(define (perm<- x)                       ;; Number[0.0-.9999] -> Permanence
+(define (perm<- x)                       ;; Number[0.0-.999] -> Permanence
   (clip-max (clip-min (int<- (* x x10k)))))
                                                                                             ;
 (define-record-type tm                   ;; TM
@@ -276,7 +276,7 @@
       (lambda (segment)
         (seg-last-used-set! segment (tm-iteration tm)))
       (tm-active-segments tm))
-    (tm-iteration-set! tm (add1 (tm-iteration tm)))))
+    (tm-iteration-set! tm (fx1+ (tm-iteration tm)))))
                                                                                             ;
 (define (reset tm)                       ;; TM ->
   ;; Indicates the start of a new sequence. Clears any predictions and makes sure
@@ -351,7 +351,7 @@
                 (lambda (p)
                   (let ((since-punished (fx- (tm-iteration tm) (seg-last-punished segment))))
                     (clip-min (fx- p (if (fx<? since-punished (tm-prediction-fail-boost tm))
-                                         (fx* (fx- (add1 (tm-prediction-fail-boost tm))
+                                         (fx* (fx- (fx1+ (tm-prediction-fail-boost tm))
                                                    since-punished) 
                                               decrement)
                                          decrement)))))
@@ -387,7 +387,7 @@
                                  (fx- (tm-prediction-fail-boost tm)) (make-synapses 0))))
         (vector-set! (tm-seg-index tm) new-flatx segment)
         (if (null? (tm-free-flatx tm))
-          (tm-next-flatx-set! tm (add1 new-flatx))
+          (tm-next-flatx-set! tm (fx1+ new-flatx))
           (tm-free-flatx-set! tm (cdr (tm-free-flatx tm))))
         (vector-set! connections cellx (cons segment segments))
         segment))]))
@@ -489,8 +489,8 @@
                               [ (fx<? prex (vector-ref active-input mid)) 
                                   (search left (fx- mid 1)) ]
                               [ (fx<? (vector-ref active-input mid) prex) 
-                                  (search (add1 mid) right) ]
-                              [ else (increment-proc (syn-perm synapse))])))))) ;; 18.   synapse.permanence += PERMANENCE_INCREMENT
+                                  (search (fx1+ mid) right) ]
+                              [ else (increment-proc (syn-perm synapse))]))))));; 18.   synapse.permanence += PERMANENCE_INCREMENT
               (if (zero? permanence)
                   ;; build synapses-to-destroy indices as sorted list
                   (build-s-t-d (fx- sx 1) (cons sx synapses-to-destroy))
@@ -514,8 +514,8 @@
       (if (fx<? cx (vector-length cells))
         (let ((colx (cellx->colx tm (vector-ref cells cx))))
           (if (fx=? colx previous-colx) 
-              (loop previous-colx active-cols (add1 cx))
-              (loop colx (cons colx active-cols) (add1 cx))))
+              (loop previous-colx active-cols (fx1+ cx))
+              (loop colx (cons colx active-cols) (fx1+ cx))))
         active-cols))))
                                                                                             ;
 (define (get-predictive-cols tm)         ;; TM -> (listof ColX)
@@ -545,7 +545,7 @@
     (define (update-actsegs segx synapse)
       (when (fx>=? (syn-perm synapse) threshold)                               ;; 60. if synapse.permanence ≥ CONNECTED_PERMANENCE then
         (let ((segment    (vector-ref segments segx))
-              (new-nacsfs (add1 (vector-ref nacsfs segx))))
+              (new-nacsfs (fx1+ (vector-ref nacsfs segx))))
           (if (null? reduced-threshold-cells)
               (when (fx=? new-nacsfs actthresh)                                ;; 61.   numActiveConnected += 1
                 (unless (memq segment actsegs)
@@ -563,10 +563,10 @@
             (let* ( (mid (fxdiv (fx+ left right) 2))
                     (synapse (synapses-ref synapses mid))) 
               (cond 
-                [ (fx<? synapse  syn-low) (search (add1 mid) right) ]
+                [ (fx<? synapse  syn-low) (search (fx1+ mid) right) ]
                 [ (fx<? syn-high synapse) (search left (fx- mid 1)) ]
                 [ else                                                         ;; 63. if synapse.permanence ≥ 0 then
-                  (let ((new-napsfs (add1 (vector-ref napsfs segx))))
+                  (let ((new-napsfs (fx1+ (vector-ref napsfs segx))))
                     (when (fx=? new-napsfs potthresh)
                       (unless (memq (vector-ref segments segx) potsegs)
                         (set! potsegs (cons (vector-ref segments segx) potsegs))))
@@ -674,7 +674,7 @@
                                                                                             ;
 (define (build-synapses n proc)          ;; Nat (Nat -> Synapse) -> Synapses
   (let ((synapses (make-synapses n)))
-    (do ((i 0 (add1 i))) ((fx=? i n) synapses)
+    (do ((i 0 (fx1+ i))) ((fx=? i n) synapses)
       (synapses-set! synapses i (proc i)))))
                                                                                             ;
 (define (in-synapses? cellx synapses)    ;; CellX (vectorof Synapse) -> Boolean
@@ -685,7 +685,7 @@
       (if (fx>? left right) #f
         (let ((mid (fxdiv (fx+ left right) 2)))
           (cond 
-            [ (fx<? (synapses-ref synapses mid) syn-low ) (search (add1 mid) right) ]
+            [ (fx<? (synapses-ref synapses mid) syn-low ) (search (fx1+ mid) right) ]
             [ (fx<? syn-high (synapses-ref synapses mid)) (search left (fx- mid 1)) ]
             [ else #t]))))))
                                                                                             ;
@@ -696,9 +696,9 @@
     (let loop ((rx 0) (sx 0) (omits omits))
       (cond [ (fx=? rx reslen) result ]
             [ (if (null? omits) #f
-                (fx=? sx (car omits))) (loop rx (add1 sx) (cdr omits)) ]
+                (fx=? sx (car omits))) (loop rx (fx1+ sx) (cdr omits)) ]
             [ else
                 (synapses-set! result rx (synapses-ref synapses sx))
-                (loop (add1 rx) (add1 sx) omits) ]))))
+                (loop (fx1+ rx) (fx1+ sx) omits) ]))))
    
 )
