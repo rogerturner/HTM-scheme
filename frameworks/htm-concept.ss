@@ -1,27 +1,23 @@
-;;  HTM-scheme   Copyright 2019-2021 Roger Turner.   https://discourse.numenta.org/u/rogert
+;;  HTM-scheme   Copyright 2019-2022 Roger Turner.   https://discourse.numenta.org/u/rogert
 #|  License: GNU Affero Public License version 3  https://www.gnu.org/licenses/agpl-3.0.txt
 
 Scheme[1] translation of HTM algorithms and experiments used in Numenta research papers[2].
 The objective is to run HTM neuroscience experiments with biologically plausible parameters
-in minimal memory (eg. ~6 bytes/synapse for 100 cortical columns, 2^20 cells 2^30 synapses)
+in minimal memory (eg ~10 bytes/synapse for 100 cortical columns, 2^20 cells 2^30 synapses)
 
 Code is R6RS[3] with minor ChezScheme[4] extensions and doesn't use any external libraries.
-Algorithm implementations are as close as possible to Numenta "htmresearch" code wrapped by
-framework code to model biological features (eg. layer4.ss and coordinates.ss for sublayers
-of different cell types and hexagonal minicolumn lattice topology).
+Algorithms are translated from Numenta "htmresearch" code (using different data structures)
+wrapped in framework code to model biological features (eg layer4.ss and coordinates.ss for
+sublayers of different cell types and hexagonal minicolumn lattice topology).
 
 The main data structures[5] are Segment (dendrite+synapses) and AxonTree (pre-post mapping)
 
+These structures are direct implementations of the HTM neuron model[6] and connectivity[7]:
 Segments contain sorted vectors of Synapses (presynaptic Source and Permanence in 32 bits),
 cell index and "time-stamped" overlap count. Source can be in any cortical column or layer.
-
 AxonTrees are one-to-many mappings (not trees) of Sources to Segments. They are implemented
-as a Hashtable with key Source and value a vector of 16-bit segment numbers, with a segment
+as a Hashtable with key Source and value a vector of 24-bit segment numbers, with a segment
 table mapping segment number to Segment. Basal and apical segments have separate AxonTrees.
-
-AxonTrees implement cell connectivity very straightforwardly: for a collection of dendritic
-segments they list each relevant pre-synaptic cell, and for each cell the segments that may
-be affected by that cell's activity.
 
 SDRs are sorted Lists of column/cell index numbers. The overall TM flow can be sketched as:
 
@@ -40,31 +36,8 @@ Core algorithms (SP, TM, ATTM, CP) have been translated from numenta/htmresearch
 using corresponding functions, variable names, and organization (**not idiomatic Scheme**).
 Code is generally "plain Scheme", with no use of continuations or syntax extensions. Fixnum
 operations are used wherever possible, and mutating / proper-list assuming versions of some
-standard procedures are included with the utility functions in frameworks/htm-prelude.ss
+standard procedures are included with the utility functions in frameworks/htm-prelude.ss[8]
 
-Types:
-  Pair, Number, Integer, Boolean, Fixnum, (Listof X), (Vector X->Y) ... = Scheme types
-  (X Y -> Z)   function with argument types X, Y and result type Z
-  {X}          abbreviation for (Listof X)
-  Nat          natural number (including zero) (Scheme Fixnum or exact Integer)
-  Perm         Nat permanence: 0-255 interpreted as 0.0-1.0
-  CCX          Nat cortical column index
-  LayerX       Nat index identifying layer or cell population
-  CellX        Nat index of cell in layer
-  ColX         Nat minicolumn index of cell: cellx div cells/minicolumn for this layer
-  Source       Nat presynaptic cell identifier: ccx<< || layerx<< || cellx
-  Synapse      Nat HTM synapse: source<<8 || Perm
-  Synapses     Bytevector of Synapse: 32-bit elements, sorted
-  Segment      Record with CCX, CellX, Synapses, and overlap counts (40 + 4*nSynapses bytes)
-  SegX         Nat 16-bit index of basal/apical segment within layer
-  SegXvec      Bytevector of SegX (extendable: index of last used element at index 0)
-  ColXmask     Bytevector, 1 bit per minicolumn in layer
-  Target       Bytevector combining ColXmask and SegXvec
-  AxonTree     [(Hashtable Source->Target) . (Vector SegX->Segment)]
-  Layer        Record with algorithm parameters, etc
-  Macrocolumn  structure of Layers with interconnections (cortical column)
-  Patch        multiple Macrocolumns
-                                                                                            ;
 Code formatting and idioms:
 
   Indentation facilitates using a "Fold All" view (eg. Atom) for a file overview (the lines
@@ -90,6 +63,9 @@ Code formatting and idioms:
   like "(and connect? (connect? arg ...))" evaluates to #f if connect? is #f, or the value
   produced by applying it if it is a procedure.
 
+  Some key parameters (eg number of minicolumns/cortical column) are set in a "parameters"
+  file, which is typically created using command-line arguments by the compilation script.
+  
   Record types can be instantiated using the key-word-args procedure to convert parameters
   specified as an unordered list of (key . value) pairs to the constructor arguments, with
   default values for unspecified parameters. Fields which are functions of other arguments
@@ -102,6 +78,29 @@ Code formatting and idioms:
                  [dependent-parameter (function-of record)] ...
                  [kwargs (append dependent-parameters kwargs)])
             (apply new (key-word-args kwargs defaults))))))
+                                                                                            ;
+Types:
+  Pair, Number, Integer, Boolean, Fixnum, (Listof X), (Vector X->Y) ... = Scheme types
+  (X Y -> Z)   function with argument types X, Y and result type Z
+  {X}          abbreviation for (Listof X)
+  Nat          natural number (including zero) (Scheme Fixnum or exact Integer)
+  Perm         Nat permanence: 0-255 interpreted as 0.0-1.0
+  CCX          Nat cortical column index
+  LayerX       Nat index identifying layer or cell population
+  CellX        Nat index of cell in layer
+  ColX         Nat minicolumn index of cell: cellx div cells/minicolumn for this layer
+  Source       Nat presynaptic cell identifier: ccx<< || layerx<< || cellx
+  Synapse      Nat HTM synapse: source<<8 || Perm
+  Synapses     Bytevector of Synapse: 32-bit elements, sorted
+  Segment      Record with CCX, CellX, Synapses, and overlap counts (40 + 4*nSynapses bytes)
+  SegX         Nat 24-bit index of basal/apical segment within layer
+  SegXvec      Bytevector of SegX (extendable: index of last used element at index 0)
+  ColXmask     Bytevector, 1 bit per minicolumn in layer
+  Target       Bytevector combining ColXmask and SegXvec
+  AxonTree     [(Hashtable Source->Target) . (Vector SegX->Segment)]
+  Layer        Record with algorithm parameters, etc
+  Macrocolumn  structure of Layers with interconnections (cortical column)
+  Patch        multiple Macrocolumns
                                                                                             ;
 Notes:
                                                                                             ;
@@ -123,7 +122,13 @@ Notes:
        me your [data structures], and I won’t usually need your [code], it’ll be obvious."
       [Fred Brooks (paraphrased)]
 
-  [6] "Just because you've implemented something doesn't mean you understand it."
+  [6] Hawkins & Ahmad 2016 Why Neurons Have Thousands of Synapses, A Theory of Sequence Memory
+      in Neocortex (https://doi.org/10.3389/fncir.2016.00023)
+
+  [7] Hawkins Ahmad Cui 2017 A Theory of How Columns in the Neocortex Enable Learning the
+      Structure of the World (https://doi.org/10.3389/fncir.2017.00081)
+
+  [8] "Just because you've implemented something doesn't mean you understand it."
       [Brian Cantwell Smith]
 
   |#
@@ -168,6 +173,7 @@ Notes:
   target-cols->mask
   target-and?
   target-adjacent?
+  segx-bytes
   segxv-last
   segxv-ref
   segxv-push
@@ -196,11 +202,13 @@ Notes:
   ;; Convenience abbreviations
   (alias fxasl  fxarithmetic-shift-left)
   (alias fxasr  fxarithmetic-shift-right)
-  (alias bvu16@ bytevector-u16-native-ref)
-  (alias bvu16! bytevector-u16-native-set!)
   (alias bvu32@ bytevector-u32-native-ref)
   (alias bvu32! bytevector-u32-native-set!)
   (define native (native-endianness))
+  
+  #| (minicolumns/macrocolumn deltille-topology?
+      perm-bits source-bits ccx-bits layer-bits cellx-bits segx-bits
+      are imported from parameters) |#
 
 ;; --- Permanence and Synapse values ---
                                                                                             ;
@@ -208,6 +216,7 @@ Notes:
                                                                                             ;
 (define min-perm                         ;; Nat
   0)
+                                                                                            ;
 (define max-perm                         ;; Nat
   (- (expt 2 perm-bits) 1))
                                                                                             ;
@@ -253,8 +262,7 @@ Notes:
   (fields
     (immutable xsource xsource)          ;; Fixnum: segx<<source that this is a segment of
     (mutable synapses)                   ;; Bytevector: the segment's Synapses
-    (mutable overlap)                    ;; Fixnum: overlaps (see calculate-segment-activity)
-    )
+    (mutable overlap))                   ;; Fixnum: overlaps (see calculate-segment-activity)
   (sealed #t) (opaque #t) (nongenerative seg)
 (protocol #;(make-seg ccx segx cellx)    ;; CCX SegX CellX -> Segment
   ;; produce a new segment
@@ -397,25 +405,30 @@ Notes:
 ;; --- Targets: projected-to columns and segment index vectors ---
                                                                                             ;
   ;; Each Source has a Targets index (extendable Bytevector) with ColXmask and SegXvec parts.
-  ;; ColXmask bits are 1 for minicolumns projected to by that source; SegXvec elements are 16
-  ;; bit values which index a (Vector SegX->Segment); index of the last SegX is at segxv-base
+  ;; ColXmask bits are 1 for minicolumns projected to by that source; SegXvec elements are 24
+  ;; bit values which index a (Vector SegX->Segment); last SegX is 16 bits before segxv-base.
                                                                                             ;
 (define colxmask-length                  ;; Nat
   ;; padded to mod 4 bytes for target-and?
   (* 4 (quotient (+ 3 (quotient (+ minicolumns/macrocolumn 7) 8)) 4)))
                                                                                             ;
 (define segxv-base                       ;; Nat
-  ;; index in bytevector of start of SegXvec part
-  colxmask-length)
+  ;; index in bytevector of start of SegXvec part (after last index)
+  (fx+ colxmask-length 2))
+                                                                                            ;  
+(define segx-bytes (fxdiv segx-bits 8))  ;; Nat
+                                                                                            ;  
+  (alias segx@ bytevector-u24-ref)
+  (alias segx! bytevector-u24-set!)
                                                                                             ;  
 (define initial-target-length            ;; Nat
-  ;; pad bv (including length) to mod 16
-  (- (* 16 (quotient (+ 23 segxv-base 4) 16)) 8))
+  ;; colxmask, last, 2 free (32b for 127 mcol )
+  (fx+ segxv-base (fx* 2 segx-bytes)))
                                                                                             ;
 (define (make-target)                    ;; -> Target
   ;; produce a new Target (ColXmask + lastx + 1+ slots)
   (let ([target (make-bytevector initial-target-length 0)])
-    (segxv-last! target segxv-base)
+    (segxv-last! target (fx- segxv-base segx-bytes))
     target))
                                                                                             ;
 (define (target-colx-bit! mask colx)     ;; ColXmask ColX ->
@@ -455,47 +468,48 @@ Notes:
                                                                                             ;
 (define (segxv-last target)              ;; Target -> Nat
   ;; produce index of last segx element
-  (bvu16@ target segxv-base))
+  (bytevector-u16-ref target (fx- segxv-base 2) native))
                                                                                             ;
 (define (segxv-last! target lastx)       ;; Target Nat ->
   ;; store index of last segx element
-  (bvu16! target segxv-base lastx))
+  (bytevector-u16-set! target (fx- segxv-base 2) lastx native))
                                                                                             ;
-(define (segxv-ref target segxx)         ;; Target Nat -> Nat
+(define (segxv-ref target segxx)         ;; Target Nat -> SegX
   ;; produce element at index segxx
-  (bvu16@ target segxx))
+  (segx@ target segxx native))
                                                                                             ;
-(define (segxv-set! target segxx u16)    ;; Target Nat U16 ->
-  ;; replace element at index segxx with u16
-  (bvu16! target segxx u16))
+(define (segxv-set! target segxx segx)   ;; Target Nat SegX ->
+  ;; replace element at index segxx with u24
+  (segx! target segxx segx native))
                                                                                             ;
 (define (segxv-extend target)            ;; Target -> Target
   ;; produce copy of target with more free space
   (let* ( [len  (bytevector-length target)]
-          [copy (make-bytevector (fx+ len 16))])  ;; (2->10->18... segxs)
+          [copy (make-bytevector (fx+ len (fx* 5 segx-bytes)))])
     (bytevector-copy! target 0 copy 0 len)
     copy))
                                                                                             ;
 (define (segxv-push segx target)         ;; SegX Target -> Target | #f
   ;; push segx onto target produce new target if extended, otherwise #f
-  (let ([next-segxx (fx+ 2 (segxv-last target))])
+  (let ([next-segxx (fx+ segx-bytes (segxv-last target))])
     (segxv-last! target next-segxx)
     (segxv-set!  target next-segxx segx)
-    (if (fx<? (fx+ 2 next-segxx) (bytevector-length target))  #f
+    (if (fx<? (fx+ segx-bytes next-segxx) (bytevector-length target))  #f
         (segxv-extend target))))
                                                                                             ;
 (define (segxv-memv segx target)         ;; SegX Target -> Nat | #f
   ;; produce index of segx in target or #f if not found
-  (let next ([segxx (segxv-last target)])
-    (cond
-      [(fx=? segxx segxv-base) #f ]
-      [(fx=? segx (segxv-ref target segxx)) segxx ]
-      [else (next (fx- segxx 2))])))
+  (let ([lastx (segxv-last target)])
+    (let next ([segxx segxv-base])
+      (cond
+        [(fx>? segxx lastx) #f ]
+        [(fx=? segx (segxv-ref target segxx)) segxx ]
+        [else (next (fx+ segxx segx-bytes))]))))
                                                                                             ;
 (define (segxv-map proc target)          ;; (SegX -> X) Target -> {X}
-  ;; produce list by applying proc to segx values in target; last segx becomes head of list
+  ;; produce list by applying proc to segx values in target
   (let ([lastx (segxv-last target)])
-    (do ( [segxx  (fx+ segxv-base 2) (fx+ segxx 2)]
+    (do ( [segxx segxv-base (fx+ segxx segx-bytes)]
           [result (list)             (cons (proc (segxv-ref target segxx)) result)])
         ((fx>? segxx lastx) result))))
                                                                                             ;
@@ -504,11 +518,11 @@ Notes:
   (let ([lastx (segxv-last target)])
     (let loop ([segxx lastx])
       (cond
-        [ (fx=? segxx segxv-base) ]
+        [ (fx<? segxx segxv-base) ]
         [ (proc (segxv-ref target segxx))
-            (bytevector-copy! target (fx+ segxx 2) target segxx (fx- lastx segxx))
-            (segxv-last! target (fx- lastx 2)) ]
-        [ else  (loop (fx- segxx 2)) ]))))
+            (bytevector-copy! target (fx+ segxx segx-bytes) target segxx (fx- lastx segxx))
+            (segxv-last! target (fx- lastx segx-bytes)) ]
+        [ else  (loop (fx- segxx segx-bytes)) ]))))
 
 ;; --- AxonTrees ---
                                                                                             ;
@@ -526,7 +540,7 @@ Notes:
   (let* ( [seg-table (cdr at)]
           [segx      (vector-ref seg-table 0)]
           [seg       (make-seg ccx segx cellx)])
-    (assert (fx<? segx (expt 2 16)))
+    ;; (assert (fx<? segx (expt 2 segx-bits)))
     (let ([free-next (vector-ref seg-table segx)])
       (vector-set! seg-table segx seg)
       (if (fxpositive? free-next)  (vector-set! seg-table 0 free-next)
@@ -534,7 +548,7 @@ Notes:
                   [seg-table  (vector-extend seg-table 1024)]
                   [new-length (vector-length seg-table)])
             (vector-set-fixnum! seg-table (fx1- new-length) 0)
-            (do ([sx (fx- new-length 2) (fx1- sx)])
+            (do ([sx (fx- new-length segx-bytes) (fx1- sx)])
                 ((fx<? sx cur-length) (vector-set-fixnum! seg-table 0 cur-length))
               (vector-set-fixnum! seg-table sx (fx1+ sx)))
             (set-cdr! at seg-table))))
@@ -626,15 +640,15 @@ Notes:
       ;; ) (vr0! (fx+ (vr0@) n)) (with-thunk-time sort-thunk))
            ]))
                                                                                             ;
-#|  (define (dolsort! elt< ls n loc)     ;; original dolsort! from s/5_6.ss:
-      (if (fx= n 1)
-          (begin (set-cdr! ls '()) ls)
-          (let ([i (fxsrl n 1)])
-            (let ([tail (list-tail ls i)])
-              (dolmerge! elt<
-                (dolsort! elt< ls i loc)
-                (dolsort! elt< tail (fx- n i) loc)
-                loc)))))  |#
+  #|  (define (dolsort! elt< ls n loc)   ;; original dolsort! from s/5_6.ss:
+        (if (fx= n 1)
+            (begin (set-cdr! ls '()) ls)
+            (let ([i (fxsrl n 1)])
+              (let ([tail (list-tail ls i)])
+                (dolmerge! elt<
+                  (dolsort! elt< ls i loc)
+                  (dolsort! elt< tail (fx- n i) loc)
+                  loc)))))  |#
                                                                                             ;
 (define (dolsort! ls n loc)              ;; {Fixnum} Nat Pair -> {Fixnum}
   ;; n is length of ls, loc is a list head for dolmerge!
