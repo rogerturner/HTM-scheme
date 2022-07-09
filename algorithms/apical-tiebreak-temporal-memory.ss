@@ -1,4 +1,4 @@
-;; HTM-scheme Apical Tiebreak Temporal Memory algorithm (C) 2019-2021 Roger Turner.
+;; HTM-scheme Apical Tiebreak Temporal Memory algorithm (C) 2019-2022 Roger Turner.
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;; Based on code from Numenta Platform for Intelligent Computing (NuPIC) ;;
   ;; which is Copyright (C) 2017, Numenta, Inc.                            ;;
@@ -622,15 +622,15 @@ activate-cells
           ;; active segments are used only to determine learning, which is only on active cols
           ;; (cells with proximal input), so only sources targeting active cols need -> active segments
           (if (and target (target-and? target cols-mask))
-            (let next-segment ([segxx (segxv-last target)] [asegs asegs] [psegs psegs])
-              (if (fx>? segxx segxv-base)
+            (let next-segment ([segxx segxv-base] [asegs asegs] [psegs psegs])
+              (if (fx<=? segxx (segxv-last target))
                 (let* ( [segment (vector-ref seg-table (segxv-ref target segxx))]
                         [synapse (synapses-search source segment)])
                   (if synapse
                     (let ([new-overlap           ;; overlap with bumped pot-count, for current iteration
                             (fx1+ (fxmax iteration (seg-overlap segment)))])
                       (next-segment
-                        (fx- segxx 2)
+                        (fx+ segxx segx-bytes)
                         (if (fx>=? (syn-perm synapse) connected)
                           (let ([new-overlap (fx+ new-overlap act-overlap-incr)])
                             (seg-overlap-set! segment new-overlap)       ;; save overlap with new counts
@@ -651,17 +651,17 @@ activate-cells
                         (if (fx=? (pot-count new-overlap) minthresh)
                           (cons segment psegs)
                           psegs)))
-                    (next-segment (fx- segxx 2) asegs psegs)))
+                    (next-segment (fx+ segxx segx-bytes) asegs psegs)))
                 (next-source (cdr sources) asegs psegs)))
             ;; matching segments only
             (if target
-              (let next-segment ([segxx (segxv-last target)] [psegs psegs])
-                (if (fx>? segxx segxv-base)
+              (let next-segment ([segxx segxv-base] [psegs psegs])
+                (if (fx<=? segxx (segxv-last target))
                   (let* ( [segment (vector-ref seg-table (segxv-ref target segxx))]
                           [new-overlap (fx1+ (fxmax iteration (seg-overlap segment)))])
                     (seg-overlap-set! segment new-overlap)             ;; save overlap with new pot-count
                     (next-segment
-                      (fx- segxx 2)
+                      (fx+ segxx segx-bytes)
                       (if (fx=? (pot-count new-overlap) minthresh)
                         (cons segment psegs)
                         psegs)))
