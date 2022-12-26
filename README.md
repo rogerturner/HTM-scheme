@@ -54,9 +54,13 @@ Archived standalone-spatial-pooler.ss and standalone-temporal-memory.ss are olde
 
 For an introduction to development in Scheme, the EdX course "How to Code" is recommended:
 
-    "For students who have already programmed, this module may seem too easy – but be careful!
-    Be sure to learn **this** programming language. While this language forms the conceptual core of nearly every programming language you might have used, it is also different in important ways.
-    Take the time to go through this material carefully. Working through the videos and practice materials for this module should take approximately 5-8 hours of dedicated time to complete."
+    "For students who have already programmed, this module may seem too easy – 
+    but be careful! Be sure to learn **this** programming language.
+    While this language forms the conceptual core of nearly every programming
+    language you might have used, it is also different in important ways.
+    Take the time to go through this material carefully. Working through the
+    videos and practice materials for this module should take approximately
+    5-8 hours of dedicated time to complete."
 [EdX How to Code Module 1a Overview](https://learning.edx.org/course/course-v1:UBCx+HtC1x+2T2017/) (course consists of 10 modules)
 
 [HTM Theory Reading List](https://github.com/rogerturner/HTM-scheme/wiki/HTM-Theory-Reading-List)
