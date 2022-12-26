@@ -1,42 +1,34 @@
-;; === HTM-scheme Coordinates  (C) 2021 Roger Turner. ===
-  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  ;; This program is free software: you can redistribute it and/or modify  ;;
-  ;; it under the terms of the GNU Affero Public License version 3 as      ;;
-  ;; published by the Free Software Foundation.                            ;;
-  ;;                                                                       ;;
-  ;; This program is distributed in the hope that it will be useful,       ;;
-  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of        ;;
-  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                  ;;
-  ;; See the GNU Affero Public License for more details.                   ;;
-  ;;                                                                       ;;
-  ;; You should have received a copy of the GNU Affero Public License      ;;
-  ;; along with this program.  If not, see http://www.gnu.org/licenses.    ;;
-  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  #|
+#| HTM-scheme Coordinates (Hexagonal minicolumn lattice) (C) 2021 Roger Turner.
+   License: AGPL3 https://www.gnu.org/licenses/agpl-3.0.txt (see Notices below)
+
+Provides distances between minicolumns in "hexagonal" lattice[1] (within cortical column
+or in different ccs), and distance between cc centres.
+
+Uses "Axial" axes: q is like x axis, r replaces y axis but is at 60º to q
+In axial coords, distance squared from origin to (q,r) is q^2 + r^2 + q*r
+Example:
                         _______
-            ^ r        / . . . \         3 hexagonal "cortical columns" of 19 minicolumns.
-           /          / . . . . \        "." = minicolumn; outlines are just to show
-          /    ______/ . . . . . )       cortical column boundaries (deltille* minicolumn
-         /    / . . . \ . . . . /        lattice is actually perfectly regular - no extra
-        /    / . . . . \ . . . /         gap between ccs)
+            ^ r        / . . . \         3 hexagonal cortical columns of 19 minicolumns.
+           /          / . . . . \        Each "." is a minicolumn - outlines are to show
+          /    ______/ . . . . . }       cc boundaries (deltille [1] lattice is actually
+         /    / . . . \ . . . . /        perfectly regular -- no extra gap between ccs).
+        /    / . . . . \ . . . /
        /    ( . . . . . ) . . . \
       /      \ . . . . / . . . . \
-     /        \ . . . / . . . . . )      * https://en.wikipedia.org/wiki/Triangular_tiling
+     /        \ . . . / . . . . . }      [1] https://en.wikipedia.org/wiki/Triangular_tiling
     /          ------- \ . . . . /
    /                    \ . . . /                   
   /                      -------
  +---------------------------------> q
 
-"Axial" axes: q is like x axis, r replaces y axis but is at 60º to q
-In axial coords, distance squared from origin to (q,r) is q^2 + r^2 + q*r
-
+Indentation facilitates using an editor "Fold All" view for a file overview.
 See htm_concept.ss for type and data structure description and code conventions.
 
   |#
   
   #!chezscheme
 
-(library (HTM-scheme frameworks coordinates)
+(library (frameworks coordinates)
 
 (export
 q-coord-of-cc-centre
@@ -51,7 +43,7 @@ mc-distance2
 (import
   (chezscheme)
   (parameters)
-  (HTM-scheme frameworks htm-prelude))
+  (frameworks htm-prelude))
                                                                                             ;
   (implicit-exports #f)
 
@@ -59,10 +51,19 @@ mc-distance2
                                                                                             ;
 (define (hex-lattice radius tile)        ;; Nat Nat -> {(Fixnum . Fixnum)}
   ;; Produce deltille lattice of (q,r) coordinate points with given radius
-  ;; Head of result list is origin, points follow in sequence of hexagons
-  ;; of increasing size (last 6*radius points are boundary of lattice)
-  ;; radii 0, 1, 2, 3, ... produce 1, 7, 19, 37 etc points
-  ;; positive tile => lattice of centres of sub-hexagons with radius=tile
+  (example: (hex-lattice 0 0) => '((0 . 0)) )
+  (example: (hex-lattice 1 0) =>
+      '((0 . 0) (1 . 0) (1 . -1) (0 . -1) (-1 . 0) (-1 . 1) (0 . 1)) )
+  #|               ^ r
+                  /              Head of result list is origin, points follow
+       (-1,1)---(0,1)            in sequence of hexagons of increasing size
+         /      /  \             (last 6*radius points are boundary of lattice).
+        /      /    \            Radii 0, 1, 2, 3, ... produce 1, 7, 19, 37 points.
+    (-1,0)--(0,0)--(1,0)--> q    Positive tile => lattice of centres of sub-hexagons
+        \           /            with radius=tile.
+         \         /
+        (0,-1)--(1,-1)           |#        
+                                                                                            ;
   (define (hexagon)                      ;; -> {(q . r)}
     (define (side q+ r+ base)            ;; Nat Nat (q . r) -> {(q . r)}
       (define (move-from prev)           ;; (q . r) -> (q . r)
@@ -165,6 +166,9 @@ mc-distance2
                                                                                             ;
 (define (within-cc-distance2 mx1 mx2)    ;; ColX ColX -> Nat
   ;; produce distance squared between minicolumns mx1 and mx2
+  (example: (within-cc-distance2 0 1) => 1)
+  (example: (within-cc-distance2 0 7) => 4)
+  (example: (within-cc-distance2 0 8) => 3)
   (let ([q-diff (fx- (mcref mc-q mx1) (mcref mc-q mx2))]
         [r-diff (fx- (mcref mc-r mx1) (mcref mc-r mx2))])
     (distance2 q-diff r-diff)))
@@ -187,24 +191,6 @@ mc-distance2
 
 ;; -- Smoke tests --
                                                                                             ;
-(define-syntax expect                    ;; ((X ... -> Y) X ...) Y -> Error |
-  ;; check that function application(s) to arguments match expected values
-  (lambda (x)                            
-    (syntax-case x ()                    ;; [expect ([fn args] expected ) ... ]
-      [ (_ (expr expected) ...)          ;; expr matches [fn args]
-        #'(begin 
-            (let ([result expr])         ;; eval expr once, no output if check passes
-              #;(when (equal? result expected) (display "."))
-              (unless (equal? result expected)
-                (for-each display 
-                  `("**" expr #\newline 
-                    "  expected: " ,expected #\newline 
-                    "  returned: " ,result  #\newline))
-                (exit))) ...)])))
-
-  [expect [(hex-lattice 0 0)  '((0 . 0)) ]]
-  [expect [(hex-lattice 1 0)  '((0 . 0)
-                                (1 . 0) (1 . -1) (0 . -1) (-1 . 0) (-1 . 1) (0 . 1)) ]]
   [expect [(take 8 (hex-lattice 2 0))
                               '((0 . 0)
                                 (1 . 0) (1 . -1) (0 . -1) (-1 . 0) (-1 . 1) (0 . 1)
@@ -216,4 +202,26 @@ mc-distance2
   [expect [(hex-lattice 1 2)  '((0 . 0)
                                 (3 . 2) (5 . -3) (2 . -5) (-3 . -2) (-5 . 3) (-2 . 5)) ]]
 
+;; (not effective on import, but will run when any export used):
+;; (eval-when (compile eval load visit revisit)
+     (check-examples)
+;; )
+
 )
+
+#| Notices:
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+    
+  Contact: https://discourse.numenta.org/u/rogert   |#
