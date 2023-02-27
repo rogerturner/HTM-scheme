@@ -1,8 +1,10 @@
-#| HTM-scheme Coordinates (Hexagonal minicolumn lattice) (C) 2021 Roger Turner.
-   License: AGPL3 https://www.gnu.org/licenses/agpl-3.0.txt (see Notices below)
+;; © 2021 Roger Turner <https://github.com/rogerturner/HTM-scheme/issues/new/choose>
+;; SPDX-License-Identifier: AGPL-3.0-or-later  (see Notices below)
 
-Provides distances between minicolumns in "hexagonal" lattice[1] (within cortical column
-or in different ccs), and distance between cc centres.
+#| HTM-scheme Coordinates (Hexagonal minicolumn lattice)
+
+Provides distances between minicolumns in "hexagonal" lattice [1] (within
+cortical column or in different ccs), and distance between cc centres.
 
 Uses "Axial" axes: q is like x axis, r replaces y axis but is at 60º to q
 In axial coords, distance squared from origin to (q,r) is q^2 + r^2 + q*r
@@ -22,7 +24,7 @@ Example:
  +---------------------------------> q
 
 Indentation facilitates using an editor "Fold All" view for a file overview.
-See htm_concept.ss for type and data structure description and code conventions.
+See htm-concept.ss for type and data structure description and code conventions.
 
   |#
   
@@ -50,17 +52,17 @@ mc-distance2
 ;; === Hexagonal coordinate system ===
                                                                                             ;
 (define (hex-lattice radius tile)        ;; Nat Nat -> {(Fixnum . Fixnum)}
-  ;; Produce deltille lattice of (q,r) coordinate points with given radius
+  ;; Produce deltille lattice of (q . r) coordinate points with given radius
   (example: (hex-lattice 0 0) => '((0 . 0)) )
   (example: (hex-lattice 1 0) =>
       '((0 . 0) (1 . 0) (1 . -1) (0 . -1) (-1 . 0) (-1 . 1) (0 . 1)) )
   #|               ^ r
-                  /              Head of result list is origin, points follow
-       (-1,1)---(0,1)            in sequence of hexagons of increasing size
+                  /              Head of result list is origin, points follow clockwise
+       (-1,1)---(0,1)            from q axis in sequence of hexagons of increasing size
          /      /  \             (last 6*radius points are boundary of lattice).
-        /      /    \            Radii 0, 1, 2, 3, ... produce 1, 7, 19, 37 points.
-    (-1,0)--(0,0)--(1,0)--> q    Positive tile => lattice of centres of sub-hexagons
-        \           /            with radius=tile.
+        /      /    \            Radii 0, 1, 2, 3, ... produce 1, 7, 19, 37, ... points
+    (-1,0)--(0,0)--(1,0)--> q    Positive tile: lattice of centres of sub-hexagons with
+        \           /            radius = tile.
          \         /
         (0,-1)--(1,-1)           |#        
                                                                                             ;
@@ -211,17 +213,18 @@ mc-distance2
 
 #| Notices:
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-    
-  Contact: https://discourse.numenta.org/u/rogert   |#
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  License: <https://www.gnu.org/licenses/agpl-3.0.txt>
+  Contact: <https://github.com/rogerturner/HTM-scheme/issues/new/choose>  |#

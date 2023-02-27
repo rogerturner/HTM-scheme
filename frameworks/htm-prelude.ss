@@ -1,24 +1,30 @@
-#| HTM-scheme Prelude (C) 2019-2022 Roger Turner.
-   License: AGPL3 https://www.gnu.org/licenses/agpl-3.0.txt (see Notices below)
+;; © 2019 Roger Turner <https://github.com/rogerturner/HTM-scheme/issues/new/choose>
+;; SPDX-License-Identifier: AGPL-3.0-or-later  (see Notices below)
+
+#| HTM-scheme Prelude
 
 Common functions specialized for HTM-scheme (Fixnums used wherever possible,
 includes mutating and proper-list assuming versions of standard procedures).
 
-See htm_concept.ss for an overviw of system objectives and code conventions.
+See htm-concept.ss for an overviw of system objectives and code conventions.
 Indentation facilitates using an editor "Fold All" view for a file overview.
 
-"Lisp's parentheses are the bumps on the top of Lego" [Paul Graham]
-"car and cdr are the only honest function names"  [citation needed]
+Functions are documented by type and purpose comments, and checked examples.
 
 Types:
   Boolean, Number, Integer, Fixnum, (Listof X), (Vectorof X) ... = Scheme types
   X Y -> Z = function of arg types X, Y to result type Z, []=optional, !=mutated
   {X}      = abbreviation for (Listof X)
   T?       = truthy (everything except #f)
-  Nat      = natural number (including zero) (Scheme Fixnum or exact Integer)
+  Nat      = natural number (non-negative Fixnum or exact Integer)
   Fixnum3  = Fixnum interpreted as number with 3 decimal places, ie 1000 = 1.0
   Bits     = Integer (Bignum) interpreted bitwise
-  KWarg    = Pair (key . value)                                              |#
+  KWarg    = Pair (key . value)
+  
+"Lisp's parentheses are the bumps on the top of Lego" [Paul Graham]
+"car and cdr are the only honest function names"  [citation needed]
+
+  |#
 
   #!chezscheme
 
@@ -35,6 +41,8 @@ Types:
   !partition
   list-refs!
   unique!
+  except-last!
+  flattenr
   filter!
   condense!
   argmax-multi
@@ -68,6 +76,7 @@ Types:
   list-sample
   fxmemv
   fxsearch
+  string->word-list
   bytevector-bit-set?
   bytevector-copy-bit!
   bytevector-copy-bit
@@ -93,6 +102,7 @@ Types:
   vr0!
   vr1@
   vr1!
+  first
   define-memoized
   expect
   expect-count
@@ -105,10 +115,13 @@ Types:
 
 (meta define *examples* (list))          ;; {(SyntaxObject . SyntaxObject)}
                                                                                             ;
+(meta define *report-examples* #f)       ;; Boolean
+                                                                                            ;
 (define-syntax example:                  ;; Expr | Expr => Result ->
   ;; (example: e) or (example: e => r)
-  ;; cons syntax objects for e, 'e to *examples*; produce dummy syntax object
-  ;; e and r will be evaluated by check-examples, so cannot reference lexical environment
+  ;; cons syntax objects for e, 'e to *examples*; produce dummy syntax object;
+  ;; e and r will be evaluated by check-examples, so cannot reference lexical environment;
+  ;; crude implementation, but short and allows readable inline checked examples
   (lambda (e-expr)
     (set! *examples*
       (cons
@@ -119,28 +132,28 @@ Types:
     #'(define _ #f)))
                                                                                             ;
 (define-syntax check-examples            ;; -> (begin (assert check) ...)
-  ;; produce asserts from *examples*, clear *examples*, display number checked
+  ;; produce asserts from *examples*, clear *examples*, maybe display number checked
   (lambda (_)
     (let ([examples (reverse *examples*)])
       (set! *examples* (list))
       (syntax-case _ ()
         [(_) #`(begin
-            #,@(map (lambda (ex)
-                  (let ([c (car ex)] [e (cdr ex)])
+              #,@(map (lambda (ex)
+                   (let ([c (car ex)] [e (cdr ex)])
                     #`(unless #,c
                         (assertion-violation #f "example" #,e))))
-                examples)
-            (display #,(length examples))
-            (display " examples checked\n")
-            (if #f #f)) ]))))
+                  examples)
+                (when #,*report-examples*
+                  (display #,(length examples))
+                  (display " examples checked\n"))) ]))))
   
   (example: (+ 2 2) => 4 )
                                                                                             ;
-  (define (double n)
+  (define (double n)                     ;; example in definition
     (example: (double 2) => 4 )
     (+ n n))
     
-  (example:
+  (example:                              ;; example with custom test condition
     (let-values ([(q r) (div-and-mod 17.5 3)])
       (and (eqv? q 5.0) (eqv? r 2.5))) )
                                                                                             ;
@@ -157,10 +170,10 @@ Types:
   (example: (take 4 '(a 2 c)) => '(a 2 c) )
   (list-head xs (fxmin n (length xs))))
                                                                                             ;
-(define (list-average xs)                ;; (Listof Number) -> Number
+(define (list-average ns)                ;; (Listof Number) -> Number
   ;; produce mean of xs (a non-empty list)
   (example: (list-average '(1 2 27)) => 10 )
-  (/ (apply + xs) (length xs)))
+  (/ (apply + ns) (length ns)))
                                                                                             ;
 (define (!reverse! xs)                   ;; {X}! -> {X}
   ;; mutate xs (a proper list) to reverse
@@ -175,7 +188,8 @@ Types:
                                                                                             ;
 (define (!partition pred? xs)            ;; (X -> T?) {X} -> {X} {X}
   ;; produce partition of xs (a proper list) by pred?
-  ;; (example: (!partition odd? '(1 2)) => (values '(1) '(2)) )
+  (example: (let-values ([(ts fs) (!partition odd? '(1 2 3))])
+              (list ts fs)) => '((1 3) (2)) )
   (let loop ([xs xs] [ts (list)] [fs (list)])
     (cond
       [(null? xs) (values (!reverse! ts) (!reverse! fs)) ]
@@ -215,10 +229,35 @@ Types:
         [else
           (loop next (cdr next))]))))
                                                                                             ;
+(define (except-last! xs)                ;; {X}! -> {X}
+  ;; produce xs without last element
+  (example: (except-last! '(1 2 3)) => '(1 2) )
+  (if (or (null? xs) (null? (cdr xs)))  '()
+      (let next-x ([p xs])
+        (cond
+          [(null? (cddr p))
+            (set-cdr! p '())
+            xs ]
+          [else (next-x (cdr p)) ]))))
+                                                                                            ;
+(define (flattenr xss)                   ;; { {X} } -> {X}
+  ;; produce list of all x (reversed)
+  (example: (flattenr '((1 2) () (3))) => '(3 2 1) )
+  (let next-list ([xss xss] [result (list)])
+    (cond
+      [(null? xss) result ]
+      [else
+        (let next-xs ([xs (car xss)] [result result])
+          (cond
+            [(null? xs) (next-list (cdr xss) result) ]
+            [else (next-xs (cdr xs) (cons (car xs) result)) ])) ])))
+                                                                                            ;
 (define (filter! pred? xs)               ;; (X -> T?) {X}! -> {X}
   ;; produce mutated xs, omitting elements for which (pred? x) is false
   (example: (filter! odd? (list 1 2 3 4 4 5 5)) => '(1 3 5 5) )
   (example: (filter! odd? (list 0 0 1 3 5 6 6)) => '(1 3 5) )
+  (example: (filter! odd? (list 0 2 4 6))       => '() )
+  (example: (let ([xs (list 0 1)]) (eq? (filter! odd? xs) (cdr xs) )))
   (let next-head ([head xs])
     (cond
       [(null? head) head ]
@@ -563,6 +602,21 @@ Types:
                 [ (fx<? target element) (search left  (fx1- mid)) ]
                 [else element]))))])))
                                                                                             ;
+(define (string->word-list s)            ;; String -> {String}
+  ;; produce list of words (delimited by space(s)) from s
+  (example: (string->word-list "a  -b") => '("a" "-b") )
+  (example: (string->word-list "a -b ") => '("a" "-b") )
+  (example: (string->word-list "  ")    => '() ) 
+  (let next-char ([s (string->list s)] [word (list)] [result (list)])
+    (define (maybe-word)  ;; cons word to result
+      (if (null? word) result
+          (cons (list->string (reverse word)) result)))
+    (cond
+      [(null? s) (reverse (maybe-word)) ]
+      [(char=? (car s) #\ )
+        (next-char (cdr s) (list) (maybe-word)) ]
+      [else (next-char (cdr s) (cons (car s) word) result) ])))
+                                                                                            ;
 (define (bytevector-bit-set? bv n)       ;; Bytevector Nat -> Boolean
   ;; produce #t if nth bit of bv is one, #f otherwise
   (example: (bytevector-bit-set? '#vu8(4) 2) => #t )
@@ -758,9 +812,9 @@ Types:
                                                                                             ;                                                                                            ;
   (define thread-if 3)                   ;; fork if vector-length >= thread-if
                                                                                             ;                                                                                            ;
-  (define random-seed-limit (- (expt 2 32) 1))
+  (define random-seed-limit  (- (expt 2 32) 1))
                                                                                             ;                                                                                            ;
-  (define seed (make-thread-parameter (random-seed)))
+  (define random-state  (make-thread-parameter 0))
                                                                                             ;                                                                                            ;
 (define (new-thread-vector-for-each f . vs);; (X ... -> ) (Vectorof X) ... ->
   ;; in a new thread for each, apply f to elements of vs, return when all finished
@@ -781,9 +835,9 @@ Types:
               (when (fx>=? threads thread-limit)
                 (condition-wait free mutex))
               (set! threads (fx1+ threads)))
-            (seed (fx1+ (random random-seed-limit)))
+            (random-state (fx1+ (random random-seed-limit)))
             (fork-thread (lambda ()                  ;; child thread
-                    (random-seed (seed))             ;; new random-seed for each thread
+                    (random-seed (random-state))     ;; new random-seed for each thread
                     (apply f xs)                     ;;
                     (with-mutex mutex                ;;
                       (set! todo (fx1- todo))        ;;
@@ -862,9 +916,9 @@ Types:
   (let ([tp (make-tp nthreads)])
     (do ([n nthreads (fx1- n)])
         ((fxzero? n))
-      (seed (fx1+ (random random-seed-limit)))
+      (random-state (fx1+ (random random-seed-limit)))
       (fork-thread (lambda ()
-          (random-seed (seed))           ;; new random-seed for each thread
+          (random-seed (random-state))   ;; new random-seed for each thread
           (let loop ()                   ;; work threads loop indefinitely
             (let* ( [work (tp-dequeue tp)]
                     [arg  (cdr work)])
@@ -966,6 +1020,17 @@ Types:
 (define (vr0! x) (set-virtual-register! 0 x))
 (define (vr1! x) (set-virtual-register! 1 x))
                                                                                             ;
+  (define first-n 0)
+                                                                                            ;
+  (define first-mutex (make-mutex))
+                                                                                            ;
+(define (first n thunk)                  ;; Fixnum Thunk ->
+  ;; call thunk first n times (for debug output)
+  (when (fx<? first-n n)
+    (set! first-n (fx1+ first-n))
+    (with-mutex first-mutex
+      (thunk))))
+
   ;; List comprehensions from the Programming Praxis standard prelude
   ;; Clauses: (see https://programmingpraxis.com/contents/standard-prelude/ for details)
   ;;   (var range [first] past [step]) — Bind var to first, first + step, ...
@@ -1070,17 +1135,18 @@ Types:
 
 #| Notices:
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-    
-  Contact: https://discourse.numenta.org/u/rogert   |#
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  License: <https://www.gnu.org/licenses/agpl-3.0.txt>
+  Contact: <https://github.com/rogerturner/HTM-scheme/issues/new/choose>  |#

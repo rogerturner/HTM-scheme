@@ -1,5 +1,7 @@
-#| HTM-scheme Concept (Notes, data structures, utilities) Copyright 2019-2022 Roger Turner.
-   License: AGPL3 https://www.gnu.org/licenses/agpl-3.0.txt (see Notices below)
+;; © 2019 Roger Turner <https://github.com/rogerturner/HTM-scheme/issues/new/choose>
+;; SPDX-License-Identifier: AGPL-3.0-or-later  (see Notices below)
+
+#| HTM-scheme Concept (Introductory notes, data structures and core functions) 
 
 Scheme[1] translation of HTM algorithms and experiments used in Numenta research papers[2].
 
@@ -39,16 +41,51 @@ Feedforward input [active minicolumns SDR: compare with..   \
 
 Core algorithms (SP, TM, ATTM, CP) have been translated from numenta/htmresearch and /nupic
 using corresponding functions, variable names, and organization (not idiomatic Scheme). [8]
-Code is generally "plain Scheme" with no use of continuations or syntax extensions*. Fixnum
+Code is generally "plain Scheme" with no use of continuations or syntax extensions†. Fixnum
 operations are used wherever possible, and mutating / proper-list assuming versions of some
 standard procedures are included with the utility functions in frameworks/htm-prelude.ss[9]
 
-*(htm-prelude includes straightforward syntax extensions for testing + list comprehensions)
+  † htm-prelude has syntax extensions for examples, "smoke tests", and list comprehensions.
+
+Notes:
+
+  [1] https://en.wikipedia.org/wiki/Scheme_(programming_language)
+      "The greatest single programming language ever designed" [Alan Kay]
+      "Lisp's parentheses are the bumps on the top of Lego" [Paul Graham]
+      "I intend this but for a Scheme of a larger Design" [John Woodward]
+      "car and cdr are the only honest function names"  [Citation needed]
+      
+  [2] https://github.com/numenta/htmpapers
+
+  [3] Dybvig 2009 The Scheme Programming Language 4th Edition (https://www.scheme.com/tspl4/)
+      "Kent Dybvig's TSPL is to Scheme what K&R is to C" [Daniel P Friedman]
+
+  [4] https://github.com/cisco/ChezScheme (Apache License 2.0)
+      (https://github.com/racket/racket/tree/master/racket/src/ChezScheme for Apple Silicon)
+  
+  [5] "Show me your [code] and conceal your [data structures], and I will be mystified. Show
+       me your [data structures], and I won’t usually need your [code], it’ll be obvious."
+      [Fred Brooks (paraphrased)]
+
+  [6] Hawkins & Ahmad 2016 Why Neurons Have Thousands of Synapses, A Theory of Sequence Memory
+      in Neocortex (https://doi.org/10.3389/fncir.2016.00023)
+
+  [7] Hawkins Ahmad Cui 2017 A Theory of How Columns in the Neocortex Enable Learning the
+      Structure of the World (https://doi.org/10.3389/fncir.2017.00081)
+
+  [8] "Just because you've implemented something doesn't mean you understand it."
+      [Brian Cantwell Smith]
+      
+  [9] "The optimization will continue until morale improves."
+      [Venkatesh Rao]
+      
+  [A] "Don't worry, you don't have to start your code from scratch."
+      https://phdcomics.com/comics/archive.php?comicid=1689 (note "Emergency Button")
 
 Code formatting and idioms:
 
-  Indentation facilitates using a "Fold All" view (eg. Atom) for a file overview (the lines
-  with right margin ";" provide foldable vertical spacing)
+  Indentation facilitates using an editor "Fold All" view for a file overview - blank lines
+  with right margin ";" provide foldable vertical spacing.
   
   Function and parameter names generally follow Numenta code (transformed to "kebab-case").
   Libraries export plain (internal) names: using modules may prefix or rename on importing.
@@ -56,7 +93,8 @@ Code formatting and idioms:
   Some function names in Numenta/numpy code are retained (eg. union1d), although the Scheme
   version is specialized for use in HTM-scheme (and could reasonably be renamed SDR-union).
 
-  Function definitions are usually commented only with their type and one-line description.
+  Function definitions are usually commented only with their type and one-line description,
+  and optionally with '(example: (fn args) => result )' form(s), which are checked on load.
   For core algorithms it may be useful to view Scheme and corresponding Numenta Python code
   side-by-side to see Numenta comments for fuller descriptions of functions and parameters.
   
@@ -88,7 +126,8 @@ Code formatting and idioms:
                  [dependent-parameter (function-of record)] ...
                  [kwargs (append dependent-parameters kwargs)])
             (apply new (key-word-args kwargs defaults))))))
-                                                                                            ;
+  (Note: applying new twice may be outwith the r6rs standard, but Chez Scheme accepts it.)
+
 Types:
   Pair, Number, Integer, Boolean, Fixnum, (Listof X), (Vector X->Y) ... = Scheme types
   (X Y -> Z)   function with argument types X, Y and result type Z
@@ -99,8 +138,8 @@ Types:
   LayerX       Nat index identifying layer or cell population (typically 0-7)
   CellX        Nat index of cell in layer (typically 0-2047)
   ColX         Nat minicolumn index of cell: cellx div cells/minicolumn for this layer
-  Source       Nat presynaptic cell identifier: ccx<< || layerx<< || cellx
-  Synapse      Nat HTM synapse: source<<8 || Perm
+  Source       Nat presynaptic cell identifier: ccx <+ layerx <+ cellx
+  Synapse      Nat HTM synapse: source <+ perm
   Synapses     Bytevector of Synapse: 32-bit elements, sorted
   Segment      Record with CCX, CellX, Synapses, and overlap counts (40 + 4*nSynapses bytes)
   SegX         Nat 24-bit index of basal/apical segment within layer
@@ -111,38 +150,6 @@ Types:
   Layer        Record with algorithm parameters, etc
   Macrocolumn  structure of Layers with interconnections (cortical column)
   Patch        multiple Macrocolumns
-                                                                                            ;
-Notes:
-                                                                                            ;
-  [1] https://en.wikipedia.org/wiki/Scheme_(programming_language)
-      "The greatest single programming language ever designed" [Alan Kay]
-      "Lisp's parentheses are the bumps on the top of Lego" [Paul Graham]
-      "I intend this but for a Scheme of a larger Design" [John Woodward]
-      "car and cdr are the only honest function names"  [Citation needed]
-      
-  [2] https://github.com/numenta/htmpapers
-
-  [3] Dybvig 2009 The Scheme Programming Language 4th Edition (https://www.scheme.com/tspl4/)
-      "Kent Dybvig's TSPL is to Scheme what K&R is to C" [Daniel P Friedman]
-
-  [4] https://github.com/cisco/ChezScheme (Apache License 2.0)
-      (https://github.com/racket/racket/tree/master/racket/src/ChezScheme for Apple Silicon)
-  
-  [5] "Show me your [code] and conceal your [data structures], and I will be mystified. Show
-       me your [data structures], and I won’t usually need your [code], it’ll be obvious."
-      [Fred Brooks (paraphrased)]
-
-  [6] Hawkins & Ahmad 2016 Why Neurons Have Thousands of Synapses, A Theory of Sequence Memory
-      in Neocortex (https://doi.org/10.3389/fncir.2016.00023)
-
-  [7] Hawkins Ahmad Cui 2017 A Theory of How Columns in the Neocortex Enable Learning the
-      Structure of the World (https://doi.org/10.3389/fncir.2017.00081)
-
-  [8] "Just because you've implemented something doesn't mean you understand it."
-      [Brian Cantwell Smith]
-      
-  [9] "The optimization will continue until morale improves"
-      [Venkatesh Rao]
 
   |#
 
@@ -164,7 +171,6 @@ Notes:
   source-layer
   source-cellx
   make-seg
-  seg-ccx
   seg-segx
   seg-cellx
   seg-overlap
@@ -186,6 +192,7 @@ Notes:
   target-cols->mask
   target-and?
   target-adjacent?
+  neighbours-mask
   segx-bytes
   segxv-last
   segxv-ref
@@ -193,11 +200,10 @@ Notes:
   segxv-map
   segxv-remove!
   make-at
+  at-seg-ref
   at-make-seg
   at-free-seg
   at-target
-  at-seg-ref
-  at-seg-set!
   at-update
   sort-unique!
   sort-unique-by!
@@ -223,40 +229,16 @@ Notes:
                  source-bits, ccx-bits, layer-bits, cellx-bits, and segx-bits
      are imported from parameters.ss)  |#
 
-;; --- Permanence and Synapse values ---
+;; --- Permanences, Sources, Synapses ---
                                                                                             ;
-  ;; Synapse is Source<<Perm, where Source is CCX<<LayerX<<CellX
+  ;; Synapse is Source<+Perm, where Source is CCX<+LayerX<+CellX
                                                                                             ;
 (define min-perm                         ;; Nat
   0)
                                                                                             ;
 (define max-perm                         ;; Nat
   (- (expt 2 perm-bits) 1))
-                                                                                            ;
-(define source-mask                      ;; Fixnum
-  ;; mask for source in synapse
-  (fxasl (- (expt 2 source-bits) 1) perm-bits))
-                                                                                            ;
-(define (make-source ccx layerx cellx)   ;; CCX LayerX CellX -> Source
-  (fx+ (fxasl (fx+ (fxasl ccx layer-bits) layerx) cellx-bits) cellx))
-                                                                                            ;
-(define (source-cellx s)                 ;; Source -> CellX
-  (fxbit-field s 0 cellx-bits))
-                                                                                            ;
-(define (source-layer s)                 ;; Source -> LayerX
-  (fxbit-field s cellx-bits (+ cellx-bits layer-bits)))
-                                                                                            ;
-(define (source-ccx s)                   ;; Source -> CCX
-  (fxbit-field s (+ cellx-bits layer-bits) source-bits))
-                                                                                            ;
-(define (make-syn source perm)           ;; Source Perm -> Synapse
-  (fx+ (fxasl source perm-bits) perm))
-                                                                                            ;
-(define (syn-source synapse)             ;; Synapse -> Source
-  (fxasr synapse perm-bits))
-                                                                                            ;
-(define (syn-perm synapse)               ;; Synapse -> Perm
-  (fxand synapse max-perm))
+  (example: max-perm => #xff )           ;; perm-bits 8
                                                                                             ;
 (define (clip-max perm)                  ;; Perm -> Perm
   (fxmin max-perm perm))
@@ -270,29 +252,56 @@ Notes:
   (example: (perm .001) => 1 )
   (example: (perm .005) => 1 )
   (example: (perm .006) => 2 )
+  (example: (perm 0.5 ) => 128 )
   (example: (perm 1.0 ) => 255 )
   (if (zero? x)  0
       (clip-max (fxmax 1 (int<- (* x max-perm))))))
+                                                                                            ;
+(define source-mask                      ;; Fixnum
+  ;; mask for source in synapse
+  (fxasl (- (expt 2 source-bits) 1) perm-bits))
+  (example: source-mask => #xffffff00 )  ;; source-bits 24
+                                                                                            ;
+(define (make-source ccx layerx cellx)   ;; CCX LayerX CellX -> Source
+  (example: (make-source 1 1 1) => #x004801 )
+  (fx+ (fxasl (fx+ (fxasl ccx layer-bits) layerx) cellx-bits) cellx))
+                                                                                            ;
+(define (source-cellx s)                 ;; Source -> CellX
+  (fxbit-field s 0 cellx-bits))
+                                                                                            ;
+(define (source-layer s)                 ;; Source -> LayerX
+  (fxbit-field s cellx-bits (+ cellx-bits layer-bits)))
+                                                                                            ;
+(define (source-ccx s)                   ;; Source -> CCX
+  (fxbit-field s (+ cellx-bits layer-bits) source-bits))
+                                                                                            ;
+(define (make-syn source perm)           ;; Source Perm -> Synapse
+  (example: (make-syn 7 128 #;(perm 0.5)) => #x00000780 )
+  (fx+ (fxasl source perm-bits) perm))
+                                                                                            ;
+(define (syn-source synapse)             ;; Synapse -> Source
+  (fxasr synapse perm-bits))
+                                                                                            ;
+(define (syn-perm synapse)               ;; Synapse -> Perm
+  (fxand synapse max-perm))
 
 ;; --- Segments and Synapses ---
                                                                                             ;
-(define-record-type seg                  ;; Segment: Synapses, Overlaps, CCX+SegX+CellX
+(define-record-type seg                  ;; Segment: SegX+CellX, Synapses, Overlaps
   (fields
-    (immutable xsource xsource)          ;; Fixnum: segx<<source that this is a segment of
-    (mutable synapses)                   ;; Bytevector: the segment's Synapses
+    (immutable xsource xsource)          ;; Fixnum: segx<+source that this is a segment of
+    (mutable synapses)                   ;; Bytevector[u32]: the segment's Synapses
     (mutable overlap))                   ;; Fixnum: overlaps (see calculate-segment-activity)
   (sealed #t) (opaque #t) (nongenerative seg)
-(protocol #;(make-seg ccx segx cellx)    ;; CCX SegX CellX -> Segment
+                                                                                            ;
+(protocol #;(make-seg segx cellx)        ;; SegX CellX -> Segment
   ;; produce a new segment
   (lambda (new)
-    (lambda (ccx segx cellx)
-      (new (fx+ (fxasl segx source-bits) (make-source ccx 0 cellx)) (make-synapses 0) 0)))))
+    (lambda (segx cellx)
+      (new (fx+ (fxasl segx source-bits) cellx) (make-synapses 0) 0)))))
                                                                                             ;
 (define (seg-cellx seg)                  ;; Segment -> CellX
   (source-cellx (xsource seg)))
-                                                                                            ;
-(define (seg-ccx seg)                    ;; Segment -> CCX
-  (source-ccx (xsource seg)))
                                                                                             ;
 (define (seg-segx seg)                   ;; Segment -> SegX
   (fxbit-field (xsource seg) source-bits (+ source-bits segx-bits)))
@@ -303,11 +312,20 @@ Notes:
 (define (synapses-ref bv n)              ;; Synapses Nat -> Synapse
   (bvu32@ bv (fx* n 4)))
                                                                                             ;
-(define (synapses-set! bv n u32)         ;; Synapses Nat Synapse ->
-  (bvu32! bv (fx* n 4) u32))
+(define (synapses-set! bv n syn)         ;; Synapses Nat Synapse ->
+  (bvu32! bv (fx* n 4) syn))
                                                                                             ;
 (define (synapses-length bv)             ;; Synapses -> Nat
   (fxdiv (bytevector-length bv) 4))
+                                                                                            ;
+(define synapses (lambda source+perm     ;; {Source Perm} -> Synapses
+  ;; produce synapses bytevec from alternating source, perm
+  (example: (synapses 1 1 2 3) => #vu8(1 1 0 0 3 2 0 0) )
+  (let ([synapses (make-synapses (fxdiv (length source+perm) 2))])
+    (do ( [s+p source+perm (cddr s+p)]
+          [sx 0 (fx+ 4 sx)])
+        ((null? s+p) synapses)
+      (bvu32! synapses sx (make-syn (car s+p) (cadr s+p)))))))
                                                                                             ;
 (define (seg-synapses->list seg)         ;; Segment -> {Synapse}
   (bytevector->uint-list (seg-synapses seg) native 4))
@@ -336,13 +354,13 @@ Notes:
   ;; binary search for synapse [no benefit from manual inlining, unroll?]
   (let* ( [synapses (seg-synapses segment)]
           [target   (fxasl source perm-bits)])
-    (let search ([left 0] [right (fx- (bytevector-length synapses) 4)])
+    (let bisect ([left 0] [right (fx- (bytevector-length synapses) 4)])
       (and (fx<=? left right)
         (let* ( [mid      (fxasl (fxasr (fx+ left right) 3) 2)]
                 [synapse  (bvu32@ synapses mid)])
           (cond 
-            [ (fx<? synapse target)                     (search (fx+ mid 4) right)]
-            [ (fx<? target (fxand source-mask synapse)) (search left (fx- mid 4)) ]
+            [ (fx<? synapse target)                     (bisect (fx+ mid 4) right)]
+            [ (fx<? target (fxand source-mask synapse)) (bisect left (fx- mid 4)) ]
             [ else synapse ]))))))
                                                                                             ;
 (define (synapses-merge! ss perm seg)    ;; {Source} Perm Segment ->
@@ -474,6 +492,13 @@ Notes:
         (next-32 (fx+ 4 bvx)) ]
       [else  #t ] )))
                                                                                             ;
+(define all-mask                         ;; ColXmask
+  (make-bytevector colxmask-length #xff))
+                                                                                            ;
+(define (target-zero? target)            ;; Target -> Boolean
+  ;; produce whether mask zero
+  (not (target-and? target all-mask)))
+                                                                                            ;
 (define (target-adjacent? target colx)   ;; Target ColX -> Boolean
   ;; whether target's ColXmask overlaps neighbours-mask of colx ("adjacent" includes colx)
   (target-and? target (vector-ref neighbours-mask colx)))
@@ -556,12 +581,16 @@ Notes:
   ;; produce axon tree with initial allocation for n-source sources
   (cons* (make-eq-hashtable n-source) (vector 1 0)))
                                                                                             ;
-(define (at-make-seg at ccx cellx)       ;; AxonTree CCX CellX -> Segment
+(define (at-seg-ref at segx)             ;; AxonTree SegX -> Segment
+  ;; produce segment segx of at
+  (vector-ref (cdr at) segx))
+                                                                                            ;
+(define (at-make-seg at cellx)           ;; AxonTree CellX -> Segment
   ;; produce a new segment, adding it to the at's segment table
   ;; use a free entry if available, or extend segment table
   (let* ( [seg-table (cdr at)]
           [segx      (vector-ref seg-table 0)]
-          [seg       (make-seg ccx segx cellx)])
+          [seg       (make-seg segx cellx)])
     #;(assert (fx<? segx (expt 2 segx-bits)))
     (let ([free-next (vector-ref seg-table segx)])
       (vector-set! seg-table segx seg)
@@ -570,15 +599,16 @@ Notes:
                   [seg-table  (vector-extend seg-table 1024)]
                   [new-length (vector-length seg-table)])
             (vector-set-fixnum! seg-table (fx1- new-length) 0)
-            (do ([sx (fx- new-length segx-bytes) (fx1- sx)])
-                ((fx<? sx cur-length) (vector-set-fixnum! seg-table 0 cur-length))
+            (do ([sx (fx- new-length 2) (fx1- sx)]) ((fx<? sx cur-length))
               (vector-set-fixnum! seg-table sx (fx1+ sx)))
+            (vector-set-fixnum! seg-table 0 cur-length)
             (set-cdr! at seg-table))))
     seg))
                                                                                             ;
 (define (at-free-seg at segx)            ;; AxonTree SegX ->
   ;; add segment table entry for segx to free list
-  (let ([seg-table (cdr at)])
+  (let ([seg-table (cdr at)])            ;; trap double-free
+    (assert (not (fixnum? (vector-ref seg-table segx))))
     (vector-set-fixnum! seg-table segx (vector-ref seg-table 0))
     (vector-set-fixnum! seg-table 0 segx)))
                                                                                             ;
@@ -586,18 +616,10 @@ Notes:
   ;; produce target for source, or #f if not found
   (eq-hashtable-ref (car at) source #f))
                                                                                             ;
-(define (at-seg-ref at segx)             ;; AxonTree SegX -> Segment
-  ;; produce element segx of at's segment table
-  (vector-ref (cdr at) segx))
-                                                                                            ;
-(define (at-seg-set! at segx seg)        ;; AxonTree SegX Segment ->
-  ;; update element segx of at's segment table
-  (vector-set! (cdr at) segx seg))
-                                                                                            ;
 (define (at-new-segment-cells at cellxs) ;; AxonTree {CellX} -> 
   ;; ?
   #f)
-
+                                                                                            ;
 (define (at-update at                    ;; AxonTree ColX {Source} Perm Segment (Synapse -> Synapse) ->
            colx ss perm seg adjust)
   ;; merge synapses made from ss (which is sorted) + perm into seg, update existing synapses
@@ -635,7 +657,7 @@ Notes:
                 [else                            ;; #f: remove source's reference to segment
                   (let ([target (at-target at (syn-source synapse))])
                     (segxv-remove! (lambda (segx)
-                        (eq? seg (at-seg-ref at segx)))
+                        (eq? seg (vector-ref (cdr at) segx)))
                       target))
                   (merge (fx+ inx 4) outx ss) ])) ]
           [(fx>? (syn-source synapse) next-s)    ;; new source
@@ -653,66 +675,45 @@ Notes:
 
 ;; --- Smoke tests ---
                                                                                             ;
-  (let* ( [seg  (make-seg 0 0 0)]
-          [syns (make-synapses 7)])
-    (seg-synapses-set! seg syns)
-    (synapses-set! syns 0 (make-syn 10 0))
-    (synapses-set! syns 1 (make-syn 11 1))
-    (synapses-set! syns 2 (make-syn 12 2))
-    (synapses-set! syns 3 (make-syn 13 3))
-    (synapses-set! syns 4 (make-syn 24 4))
-    (synapses-set! syns 5 (make-syn 25 5))
-    (synapses-set! syns 6 (make-syn 26 6))
-    [expect
-      ([synapses-search  0 seg] #f)
-      ([synapses-search  9 seg] #f)
-      ([synapses-search 10 seg] #xA00)
-      ([synapses-search 11 seg] #xB01)
-      ([synapses-search 12 seg] #xC02)
-      ([synapses-search 13 seg] #xD03)
-      ([synapses-search 14 seg] #f)
-      ([synapses-search 17 seg] #f)
-      ([synapses-search 23 seg] #f)
-      ([synapses-search 24 seg] #x1804)
-      ([synapses-search 25 seg] #x1905)
-      ([synapses-search 26 seg] #x1A06)
-      ([synapses-search 27 seg] #f)
-      ])
+  (let ([seg (make-seg 0 0)])
+    (seg-synapses-set! seg (synapses 10 0 11 1 12 2 13 3 24 4 25 5 26 6))
+    (for-each (lambda (s)
+        (expect [(synapses-search s seg)
+                 (case s
+                  [10 #xA00] [11 #xB01] [12 #xC02] [13 #xD03]
+                  [24 #x1804] [25 #x1905] [26 #x1A06]
+                  [else #f])]))
+      (iota 30)))
                                                                                             ;
-  (let* ( [seg  (make-seg 0 0 0)]
-          [syns (make-synapses 3)])
-    (seg-synapses-set! seg syns)
-    (synapses-set! syns 0 (make-syn 0 00))
-    (synapses-set! syns 1 (make-syn 2 22))
-    (synapses-set! syns 2 (make-syn 4 44))
+  (let ([seg (make-seg 0 0)])
+    (seg-synapses-set! seg (synapses 0 0 2 22 4 44))
     [expect ([seg-synapses seg]  #vu8(0 0 0 0 22 2 0 0          44 4 0 0) )]
     [synapses-merge! (list 2 3) 33 seg]
     [expect ([seg-synapses seg]  #vu8(0 0 0 0 22 2 0 0 33 3 0 0 44 4 0 0) )]
     [synapses-merge! (list 3 4) 33 seg]
     [expect ([seg-synapses seg]  #vu8(0 0 0 0 22 2 0 0 33 3 0 0 44 4 0 0) )] )
                                                                                             ;
-  #;
-  (let ([segxv0 (make-target)])
+  (let ([segxv0 (make-target)])          ;; requires segxv-base 18, segx-bytes 3
     [expect ([bytevector-length segxv0]   24 )
             ([segxv-push 1 segxv0]  #f )
-            ([bvu16@ segxv0 16]      18 )
-            ([bvu16@ segxv0 18]       1 )
-            ([segxv-push 2 segxv0]  #f )
-            ([bvu16@ segxv0 16]      20 )
-            ([bvu16@ segxv0 18]       1 )
-            ([bvu16@ segxv0 20]       2 )])
+            ([segxv-last segxv0]    18 )
+            ([segxv-ref segxv0 18]   1 )
+            ((not [segxv-push 2 segxv0])  #f )
+            ([segxv-last segxv0]    21 )
+            ([segxv-ref segxv0 18]   1 )
+            ([segxv-ref segxv0 21]   2 )])
                                                                                             ;
   (let ([at (make-at 99)])
-    [expect ([cdr at]  '#(1 0) )]
-    (let* ( [seg1 [at-make-seg at 1 1]]
-            [ss   [cdr at]])
-      [expect ([vector-take 5 ss]  `#(2 ,seg1 3 4 5) )
-              ([vector-ref ss [- [vector-length ss] 1]]  0 )]
-      (let ([seg2 [at-make-seg at 2 2]])
-        [expect ([vector-take 5 ss]  `#(3 ,seg1 ,seg2 4 5) )]
-        [at-free-seg at 1]
-        [expect ([vector-take 5 ss]  `#(1 3 ,seg2 4 5) )])))
-                                                                                            ;
+    [expect ((cdr at)  '#(1 0) )]
+    (let* ( [seg1 (at-make-seg at 1)]
+            [ss   (cdr at)])
+      [expect ((vector-take 5 ss)  `#(2 ,seg1 3 4 5) )
+              ((vector-ref ss (- (vector-length ss) 1))  0 ) ]
+      (let ([seg2 (at-make-seg at 2)])
+        [expect ((vector-take 5 ss)  `#(3 ,seg1 ,seg2 4 5) ) ]
+                 (at-free-seg at 1)
+        [expect ((vector-take 5 ss)  `#(1 3 ,seg2 4 5) ) ])))
+
 ;; (not effective on import, but will run when any export used):
 ;; (eval-when (compile eval load visit revisit)
      (check-examples)
@@ -722,17 +723,18 @@ Notes:
 
 #| Notices:
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-    
-  Contact: https://discourse.numenta.org/u/rogert   |#
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  License: <https://www.gnu.org/licenses/agpl-3.0.txt>
+  Contact: <https://github.com/rogerturner/HTM-scheme/issues/new/choose>  |#

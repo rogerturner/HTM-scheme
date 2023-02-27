@@ -1,5 +1,7 @@
-#| HTM-scheme Sorting (Customized sort functions) (C) 2022 Roger Turner.
-   License: AGPL3 https://www.gnu.org/licenses/agpl-3.0.txt (see Notices below)
+;; © 2022 Roger Turner <https://github.com/rogerturner/HTM-scheme/issues/new/choose>
+;; SPDX-License-Identifier: AGPL-3.0-or-later  (see Notices below)
+
+#| HTM-scheme Sorting (Customized sort functions)
 
 Uniquing in-place merge sorts for Fixnums (SDRs) and Segments.
 Derived from [Shivers 2002 A simple and efficient natural merge sort, Appendix D]
@@ -12,8 +14,8 @@ and small-list sorting from chezscheme library.
 (library (frameworks sorting)
 
 (export
-  sort-unique!
-  sort-unique-by!
+sort-unique!
+sort-unique-by!
   )
 
 (import
@@ -133,7 +135,11 @@ and small-list sorting from chezscheme library.
               (let ([next-b (cdr b)])
                 (scan-b b x a (car next-b) next-b)))) ]
         [(fx=? y x)
-          (fxmerge1! a enda (cdr b) endb) ]
+          (values a                      ;; a starts the result
+            (if (eq? b endb)
+              enda
+              (let ([next-b (cdr b)])
+                (scan-b b x a (car next-b) next-b)))) ]
         [else
           (values a                      ;; a starts the result
             (if (eq? a enda)
@@ -159,22 +165,26 @@ and small-list sorting from chezscheme library.
       (values s ends ls u))))
                                                                                             ;
 (define (fxsort1! fxs)                   ;; {Fixnum}! -> {Fixnum}
-  ;; reorder fxs
+  ;; ascending sort of fxs, without duplicates
+  (example:
+    (let* ( [fxs (list 1 2 1)]
+            [fx^ (fxsort1! fxs)])
+      (and (equal? fx^ '(1 2)) (eq? fx^ fxs))))
   (example:
     (let* ( [fxs (list 3 1 2)]
             [*1  (cdr fxs)]
-            [a (fxsort1! fxs)])
-      (and (eq? a *1) (equal? a '(1 2 3)))))
+            [fx^ (fxsort1! fxs)])
+      (and (equal? fx^ '(1 2 3)) (eq? fx^ *1))))
   (example:
     (let* ( [fxs (list 3 1 1 4 4 2 4 3)]
             [*1  (cdr fxs)]
-            [a (fxsort1! fxs)])
-      (and (eq? a *1) (equal? a '(1 2 3 4)))))
+            [fx^ (fxsort1! fxs)])
+      (and (equal? fx^ '(1 2 3 4)) (eq? fx^ *1))))
   (example:
     (let* ( [fxs (list 1 9 0 1 1 1 7 5 3 0 2 4 6 1 8 9 9 9 9)]
-            [*1  (cddr fxs)]
-            [a (fxsort1! fxs)])
-      (and (eq? a *1) (equal? a '(0 1 2 3 4 5 6 7 8 9)))))
+            [*0  (cddr fxs)]
+            [fx^ (fxsort1! fxs)])
+      (and (equal? fx^ '(0 1 2 3 4 5 6 7 8 9)) (eq? fx^ *0))))
   (if (pair? fxs)
     (let*-values (
         [(lr endr rest)  (fxgetrun1! fxs)]  ;; fxs to endr now dup-free
@@ -184,12 +194,12 @@ and small-list sorting from chezscheme library.
     fxs))
                                                                                             ;
 (define sort-unique!                     ;; {Fixnum} [Nat] -> {Fixnum}
-  ;; produce ascending sort of ls [of length n] without duplicates, reusing pairs
+  ;; ascending sort of fxs [of length n] without duplicates, reusing pairs
   (case-lambda
-    [(ls)
-      (fxsort1! ls) ]
-    [(ls n)
-      (fxsort1! ls) ]))
+    [(fxs)
+      (fxsort1! fxs) ]
+    [(fxs n)
+      (fxsort1! fxs) ]))
                                                                                             ;
 (define (sort-unique-by! elt< xs)        ;; (X X -> T?) {X} -> {X}
   ;; produce sort of xs by elt<, without duplicates, reusing pairs
@@ -240,22 +250,24 @@ and small-list sorting from chezscheme library.
             (loop (cdr xs1) xs2       xs1)])) ]))
   (cdr loc))
 
+;; -- Smoke tests --
+                                                                                            ;
   [expect
-    ([sort-unique! '()]         '() )
-    ([sort-unique! '(1 2 3)]    '(1 2 3) )
-    ([sort-unique! '(2 3 1) 3]  '(1 2 3) )
-    ([sort-unique! '(1 2 2 3)]  '(1 2 3) )
-    ([sort-unique! '(0 9 1 1 1 1 7 5 3 0 2 4 6 1 8 9 9 9 9)]  '(0 1 2 3 4 5 6 7 8 9) )]
+    ([sort-unique! (list)]         '() )
+    ([sort-unique! (list 1 2 3)]    '(1 2 3) )
+    ([sort-unique! (list 2 3 1) 3]  '(1 2 3) )
+    ([sort-unique! (list 1 2 2 3)]  '(1 2 3) )
+    ([sort-unique! (list 0 9 1 1 1 1 7 5 3 0 2 4 6 1 8 9 9 9 9)]  '(0 1 2 3 4 5 6 7 8 9) )]
                                                                                             ;
   (let ()
     (define (s< s1 s2)
       (string<? (symbol->string s1) (symbol->string s2)))
     [expect
-      ([sort-unique-by! s< '()]         '() )
-      ([sort-unique-by! s< '(a b c)]    '(a b c) )
-      ([sort-unique-by! s< '(b c a)]    '(a b c) )
-      ([sort-unique-by! s< '(a b b c)]  '(a b c) )
-      ([sort-unique-by! s< '(a c e g c c b a d f h h)]  '(a b c d e f g h) )] )
+      ([sort-unique-by! s< (list)]             '() )
+      ([sort-unique-by! s< (list 'a 'b 'c)]    '(a b c) )
+      ([sort-unique-by! s< (list 'b 'c 'a)]    '(a b c) )
+      ([sort-unique-by! s< (list 'a 'b 'b 'c)] '(a b c) )
+      ([sort-unique-by! s< (list 'a 'c 'e 'g 'c 'c 'b 'a 'd 'f 'h 'h)]  '(a b c d e f g h) )] )
 
 ;; (not effective on import, but will run when any export used):
 ;; (eval-when (compile eval load visit revisit)
@@ -333,17 +345,18 @@ and small-list sorting from chezscheme library.
 
 #| Notices:
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-    
-  Contact: https://discourse.numenta.org/u/rogert   |#
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+  License: <https://www.gnu.org/licenses/agpl-3.0.txt>
+  Contact: <https://github.com/rogerturner/HTM-scheme/issues/new/choose>  |#
