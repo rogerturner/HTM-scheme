@@ -1,15 +1,17 @@
 cff-version: 1.2.0
-message: If you use this software, please cite it as below.
 title: HTM-scheme
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
 authors:
-  - family-names: Turner
-    given-names: Roger
+  - given-names: Roger
+    family-names: Turner
+repository-code: 'https://github.com/rogerturner/HTM-scheme'
+abstract: >-
+  Hierarchical Temporal Memory in Scheme: some Numenta HTM
+  algorithms and experiments translated to Scheme
 keywords:
-  - "Hierarchical Temporal Memory"
-    "Chez Scheme"
-license: AGPL-3.0
-references:
-  - type: software
-    authors: 
-      - name: Numenta
-    repository-code: "https://github.com/numenta/htmresearch"
+  - Hierarchical Temporal Memory
+  - Chez Scheme
+license: AGPL-3.0-or-later
